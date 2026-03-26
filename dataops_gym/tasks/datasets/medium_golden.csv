@@ -1,0 +1,51 @@
+user_id,name,email,signup_date,status,purchase_id,amount,purchase_date,product
+1,Michael Carlson,djames@example.net,2023-09-25,active,,,,
+3,Unknown,mckaynancy@example.com,2025-03-04,active,39.0,311.59,2026-01-05,Position
+4,Katie Rodriguez,meagan89@example.org,2023-07-15,active,9.0,338.32,2025-06-11,Fund
+4,Katie Rodriguez,meagan89@example.org,2023-07-15,active,29.0,291.69,2025-09-24,Speech
+6,Sandra Parker,allenashley@example.org,2023-05-27,active,19.0,463.55,2024-09-05,Decide
+7,Mr. Philip Cannon,donnaarroyoexample.org,2023-10-05,active,6.0,331.2,2025-04-29,A
+7,Mr. Philip Cannon,donnaarroyoexample.org,2023-10-05,active,10.0,35.0,2025-02-27,Letter
+7,Mr. Philip Cannon,donnaarroyoexample.org,2023-10-05,active,12.0,128.08,2025-03-05,Wear
+7,Mr. Philip Cannon,donnaarroyoexample.org,2023-10-05,active,56.0,469.77,2025-01-22,Give
+7,Mr. Philip Cannon,donnaarroyoexample.org,2023-10-05,active,58.0,372.5,2024-05-09,There
+8,Jenny Lewis,jenniferross@example.net,2024-07-12,active,,,,
+9,Joseph Martinez, calebsmith@example.net ,2023-09-09,active,2.0,363.06,2025-01-26,Yard
+9,Joseph Martinez, calebsmith@example.net ,2023-09-09,active,14.0,223.125,2024-07-27,Become
+9,Joseph Martinez, calebsmith@example.net ,2023-09-09,active,57.0,135.91,2025-04-25,Just
+10,Benjamin Welch,carlosjohnson@example.com,2023-05-16,active,59.0,139.81,2025-01-26,West
+11,Michael Lewis,jenniferkhan@example.net,2024-03-05,active,23.0,192.59,2024-05-17,Join
+11,Michael Lewis,jenniferkhan@example.net,2024-03-05,active,52.0,221.9,2026-01-06,Be
+13,Megan Joyce,brownjessica@example.org,2023-09-23,active,13.0,270.46,2026-02-24,Simply
+14,Jerry Henderson,steven17example.net,2023-06-05,active,60.0,360.22,2025-10-08,Young
+15,Unknown,housemelinda@example.org,2024-01-16,active,,,,
+17,Monica Logan,smoore@example.org,2025-03-02,active,42.0,106.11,2026-01-16,Like
+18,Kimberly Adkins, williamsthomas@example.net ,2023-07-18,active,15.0,234.0,2024-10-18,Record
+20,Lauren Williams,barnesbrandy@example.net,2023-11-11,active,45.0,231.33,2024-09-30,End
+21,Michael Edwards,randy47example.com,2025-02-01,active,31.0,33.3,2025-01-29,Control
+21,Michael Edwards,randy47example.com,2025-02-01,active,43.0,123.15,2026-01-09,Six
+24,Kendra Contreras,sarah12@example.com,2023-06-18,active,,,,
+27,Carlos Whitney, joycearnold@example.com ,2024-05-08,active,5.0,99.25,2025-05-15,Into
+27,Carlos Whitney, joycearnold@example.com ,2024-05-08,active,40.0,330.4,2025-11-10,Wait
+28,Tony Vazquez,amydavenportexample.net,2024-05-02,active,,,,
+29,Andrew Diaz,nolanjason@example.org,2024-07-24,active,,,,
+30,Justin Baxter,sarayoung@example.org,2025-03-07,active,8.0,432.6,2025-02-02,Particularly
+30,Justin Baxter,sarayoung@example.org,2025-03-07,active,25.0,146.2,2024-08-14,Same
+31,Sierra Johnson,kimberly63@example.com,2023-07-20,active,32.0,253.91,2025-11-02,Safe
+32,Janet Williams,dwalker@example.com,2023-11-03,active,1.0,111.05,2025-05-04,Dark
+32,Janet Williams,dwalker@example.com,2023-11-03,active,21.0,243.27,2024-09-19,May
+32,Janet Williams,dwalker@example.com,2023-11-03,active,27.0,81.62,2024-09-19,Reality
+33,Crystal Johnson,raymondramirez@example.org,2025-02-28,active,34.0,44.66,2025-05-06,Whose
+33,Crystal Johnson,raymondramirez@example.org,2025-02-28,active,49.0,136.27,2024-10-11,Bank
+34,Martin Ross,sheila14@example.org,2024-05-22,active,33.0,82.93,2025-04-07,Apply
+34,Martin Ross,sheila14@example.org,2024-05-22,active,54.0,8.87,2024-12-29,Claim
+35,Mrs. Linda Reed,samuel81example.com,2025-01-10,active,18.0,418.83,2024-09-12,Force
+35,Mrs. Linda Reed,samuel81example.com,2025-01-10,active,30.0,35.17,2026-01-01,Start
+35,Mrs. Linda Reed,samuel81example.com,2025-01-10,active,53.0,353.25,2024-07-04,During
+36,Andrew Graham, michaeljones@example.net ,2025-01-26,active,17.0,53.46,2024-06-01,Society
+36,Andrew Graham, michaeljones@example.net ,2025-01-26,active,26.0,332.63,2024-12-30,Instead
+36,Andrew Graham, michaeljones@example.net ,2025-01-26,active,55.0,223.125,2025-08-23,Attack
+37,Mary Martinez,william65@example.com,2024-08-15,active,3.0,290.22,2024-12-27,Smile
+37,Mary Martinez,william65@example.com,2024-08-15,active,38.0,126.88,2025-06-03,Someone
+37,Mary Martinez,william65@example.com,2024-08-15,active,41.0,223.125,2025-03-28,Then
+37,Mary Martinez,william65@example.com,2024-08-15,active,47.0,498.07,2025-10-05,Near

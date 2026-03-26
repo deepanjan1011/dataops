@@ -1,0 +1,18 @@
+[project]
+name = "dataops-gym"
+version = "1.0.0"
+description = "DataOps Gym - AI Data Quality & Curation Environment for OpenEnv"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.100.0",
+    "uvicorn>=0.20.0",
+    "pydantic>=2.0.0",
+    "pandas>=2.0.0",
+    "numpy>=1.24.0",
+    "openai>=1.0.0",
+    "faker>=18.0.0",
+    "requests>=2.28.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0.0", "httpx>=0.24.0"]

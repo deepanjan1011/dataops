@@ -1,0 +1,24 @@
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Secrets — never commit
+.env
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+
+# macOS
+.DS_Store
+
+# Build artifacts
+*.egg-info/
+dist/
+build/
+
+# PDF prompt (not needed in repo)
+*.pdf

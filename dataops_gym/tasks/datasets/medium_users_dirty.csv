@@ -1,0 +1,41 @@
+user_id,name,email,signup_date,status
+USR-001,Michael Carlson,djames@example.net,09/25/2023,ACTIVE
+2,Terri Frazier,maldonadoamanda@example.com,"October 07, 2024",inactive
+USR-003,,mckaynancy@example.com,2025-03-04,active
+4,Katie Rodriguez,meagan89@example.org,07/15/2023,active
+USR-005,,georgetracy@example.org,"February 01, 2025",
+6,  Sandra Parker  ,allenashley@example.org,2023-05-27,ACTIVE
+USR-007,Mr. Philip Cannon,donnaarroyoexample.org,10/05/2023,Active
+8,Jenny Lewis,jenniferross@example.net,"July 12, 2024",active
+USR-009,Joseph Martinez, calebsmith@example.net ,2023-09-09,Active
+10,Benjamin Welch,carlosjohnson@example.com,05/16/2023,active
+USR-011,Michael Lewis,jenniferkhan@example.net,"March 05, 2024",active
+12,  Rhonda Lee  ,hopkinsmichael@example.com,2024-02-29,inactive
+USR-013,Megan Joyce,brownjessica@example.org,09/23/2023,active
+14,Jerry Henderson,steven17example.net,"June 05, 2023",Active
+USR-015,,housemelinda@example.org,2024-01-16,Active
+16,Dr. Steven Martin,gallowayjoseph@example.com,10/20/2023,inactive
+USR-017,Monica Logan,smoore@example.org,"March 02, 2025",Active
+18,  Kimberly Adkins  , williamsthomas@example.net ,2023-07-18,ACTIVE
+USR-019,Angela Lopez,leonardjoe@example.org,02/10/2025,inactive
+20,Lauren Williams,barnesbrandy@example.net,"November 11, 2023",Active
+USR-021,Michael Edwards,randy47example.com,2025-02-01,Active
+22,Alexandra Howell,jonesjason@example.com,06/30/2023,
+USR-023,Benjamin Sanchez,eric84@example.net,"March 13, 2025",inactive
+24,  Kendra Contreras  ,sarah12@example.com,2023-06-18,ACTIVE
+USR-025,Juan Nelson,jenniferharris@example.net,12/07/2024,inactive
+26,Danielle Odonnell,davisrodney@example.com,"April 27, 2023",inactive
+USR-027,Carlos Whitney, joycearnold@example.com ,2024-05-08,active
+28,Tony Vazquez,amydavenportexample.net,05/02/2024,Active
+USR-029,Andrew Diaz,nolanjason@example.org,"July 24, 2024",Active
+30,  Justin Baxter  ,sarayoung@example.org,2025-03-07,active
+USR-031,Sierra Johnson,kimberly63@example.com,07/20/2023,ACTIVE
+32,Janet Williams,dwalker@example.com,"November 03, 2023",active
+USR-033,Crystal Johnson,raymondramirez@example.org,2025-02-28,Active
+34,Martin Ross,sheila14@example.org,05/22/2024,Active
+USR-035,Mrs. Linda Reed,samuel81example.com,"January 10, 2025",active
+36,  Andrew Graham  , michaeljones@example.net ,2025-01-26,active
+USR-037,Mary Martinez,william65@example.com,08/15/2024,active
+USR-033,Crystal Johnson,raymondramirez@example.org,2025-02-28,Active
+16,Dr. Steven Martin,gallowayjoseph@example.com,10/20/2023,inactive
+18,  Kimberly Adkins  , williamsthomas@example.net ,2023-07-18,ACTIVE
