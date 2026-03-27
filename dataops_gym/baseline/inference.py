@@ -60,17 +60,36 @@ def _parse_action(text: str) -> dict:
     return {"action_type": "submit"}
 
 
-def run_task(task_id: str) -> float:
-    """Run the baseline agent on a single task. Returns grader score."""
-    client = OpenAI(api_key=OPENAI_API_KEY, base_url=OPENAI_BASE_URL)
+MEDIUM_EXTRA_INSTRUCTIONS = """
+MEDIUM TASK — CRITICAL MERGE INSTRUCTIONS:
+This task has TWO tables: "main" (users) and "purchases". Follow this strict order:
 
-    # 1. Reset environment
-    resp = requests.post(f"{BASE_URL}/reset", json={"task_id": task_id})
-    resp.raise_for_status()
-    obs = resp.json()
+PHASE 1 — Clean the main (users) table first:
+  1. strip_whitespace on user_id
+  2. apply_regex on user_id to remove any non-digit characters: pattern="[^0-9]", replacement=""
+  3. cast_type on user_id to int
+  4. format_date on signup_date with target_format="%Y-%m-%d"
+  5. drop_duplicates
 
-    # 2. Build system prompt
-    system_prompt = f"""You are a data engineering agent. Your job is to clean a dataset.
+PHASE 2 — Clean the purchases table (use filter_rows with condition "False" to switch context if needed, or just proceed to merge after main is clean):
+  6. cast_type on user_id to int (purchases table user_id must also be int before merging)
+  - To operate on purchases, use: {"action_type": "cast_type", "column_name": "user_id", "target_type": "int", "right_table": "purchases"}
+  - Actually: just ensure both tables have user_id as int. The merge will fail if types differ.
+
+PHASE 3 — Merge ONLY after both tables are clean:
+  7. merge_tables: {"action_type": "merge_tables", "right_table": "purchases", "merge_on": "user_id", "merge_how": "left"}
+
+PHASE 4 — Post-merge cleanup, then submit.
+
+CRITICAL RULES:
+- DO NOT merge until user_id is cast to int in the main table.
+- If you see a merge error about type mismatch, cast user_id to int first, then retry the merge.
+- user_id values may look like "U001", "user_42", or " 7 " — strip all non-digits and cast to int.
+"""
+
+
+def _build_system_prompt(task_id: str, obs: dict) -> str:
+    base = f"""You are a data engineering agent. Your job is to clean a dataset.
 Task: {obs['task_description']}
 
 You can take these actions (one at a time, respond with JSON only):
@@ -90,6 +109,24 @@ You can take these actions (one at a time, respond with JSON only):
 Look at the observation carefully: check column summaries, null counts, data types, and sample values.
 When you think the data is clean enough, use submit.
 Respond ONLY with a single JSON action object. No explanation."""
+
+    if task_id == "medium":
+        base += "\n" + MEDIUM_EXTRA_INSTRUCTIONS
+
+    return base
+
+
+def run_task(task_id: str) -> float:
+    """Run the baseline agent on a single task. Returns grader score."""
+    client = OpenAI(api_key=OPENAI_API_KEY, base_url=OPENAI_BASE_URL)
+
+    # 1. Reset environment
+    resp = requests.post(f"{BASE_URL}/reset", json={"task_id": task_id})
+    resp.raise_for_status()
+    obs = resp.json()
+
+    # 2. Build system prompt
+    system_prompt = _build_system_prompt(task_id, obs)
 
     messages = [{"role": "system", "content": system_prompt}]
 
@@ -114,7 +151,19 @@ Respond ONLY with a single JSON action object. No explanation."""
             "error": obs.get("error"),
         }
         obs_text = json.dumps(obs_summary, indent=2, default=str)
-        messages.append({"role": "user", "content": f"Current state:\n{obs_text}"})
+
+        # Prepend a prominent error notice if the last action failed
+        error = obs.get("error")
+        if error:
+            user_content = (
+                f"⚠️ YOUR LAST ACTION FAILED WITH ERROR: {error}\n"
+                f"You MUST fix this error before moving on. Choose a corrective action.\n\n"
+                f"Current state:\n{obs_text}"
+            )
+        else:
+            user_content = f"Current state:\n{obs_text}"
+
+        messages.append({"role": "user", "content": user_content})
 
         # Get LLM action (retry up to 3 times on rate limit)
         action_text = '{"action_type": "submit"}'
@@ -198,7 +247,17 @@ def run_all_tasks() -> dict:
 
 
 if __name__ == "__main__":
+    import sys
     if not OPENAI_API_KEY:
         print("ERROR: Set OPENAI_API_KEY environment variable")
         exit(1)
-    run_all_tasks()
+    # Optional: pass a single task_id as argument, e.g. python -m ... medium
+    if len(sys.argv) > 1:
+        task_id = sys.argv[1]
+        print(f"\n{'='*50}")
+        print(f"Task: {task_id.upper()}  (model: {BASELINE_MODEL})")
+        print(f"{'='*50}")
+        score = run_task(task_id)
+        print(f"\nScore: {score:.4f}")
+    else:
+        run_all_tasks()

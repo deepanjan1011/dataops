@@ -137,11 +137,11 @@ docker run -p 7860:7860 dataops-gym
 
 ## Baseline Scores
 
-| Task | Score |
-|---|---|
-| easy | 0.8201 |
-| medium | 0.6238 |
-| hard | 0.5968 |
+| Task | Score | Model |
+|---|---|---|
+| easy | 0.9017 | gpt-4o-mini |
+| medium | 0.6350 | gpt-4o-mini |
+| hard | 0.9826 | gpt-4o-mini |
 
 ---
 
