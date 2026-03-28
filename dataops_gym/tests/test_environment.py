@@ -3,11 +3,14 @@ Tests for DataOps Gym environment.
 Run with: python -m pytest dataops_gym/tests/ -v
 """
 
+import io
 import pytest
 import pandas as pd
+from fastapi.testclient import TestClient
 from dataops_gym.server.dataops_environment import DataOpsEnvironment
 from dataops_gym.models import DataOpsAction, DataOpsObservation, DataOpsState
-from dataops_gym.graders.grader import grade
+from dataops_gym.graders.grader import grade_by_criteria
+from dataops_gym.tasks.auto_detect import detect_data_issues, build_criteria_from_issues
 
 
 @pytest.fixture
@@ -21,7 +24,7 @@ def test_reset_easy_returns_valid_observation(env):
     obs = env.reset("easy")
     assert isinstance(obs, DataOpsObservation)
     assert obs.task_id == "easy"
-    assert obs.total_rows == 50
+    assert obs.total_rows >= 50  # 50 base + ~10% duplicates injected
     assert obs.total_columns == 5
     assert len(obs.column_summaries) == 5
     assert 0.0 <= obs.data_health_score <= 1.0
@@ -44,7 +47,7 @@ def test_reset_medium_loads_two_tables(env):
     assert "main" in obs.available_tables
     assert "purchases" in obs.available_tables
     assert len(obs.available_tables) == 2
-    assert obs.total_rows == 40   # users table
+    assert obs.total_rows >= 40   # 40 base users + ~8% duplicates injected
     assert obs.total_columns == 5
 
 
@@ -64,14 +67,15 @@ def test_reset_hard_loads_text_documents(env):
 # ── Test 4: valid action returns updated observation ──────────────────────────
 
 def test_valid_action_returns_updated_observation(env):
-    env.reset("easy")
+    obs_before = env.reset("easy")
+    rows_before = obs_before.total_rows
     action = DataOpsAction(action_type="drop_duplicates")
     obs = env.step(action)
     assert isinstance(obs, DataOpsObservation)
-    assert obs.total_rows == 45          # 5 duplicates removed
+    assert obs.total_rows < rows_before   # duplicates were removed
     assert obs.step_number == 1
-    assert "Dropped 5" in obs.last_action_result
-    assert obs.reward != 0.0 or obs.total_rows < 50  # something changed
+    assert "Dropped" in obs.last_action_result
+    assert obs.reward != 0.0 or obs.total_rows < rows_before
 
 
 # ── Test 5: invalid action returns error but does not crash ───────────────────
@@ -106,17 +110,14 @@ def test_submit_marks_episode_done(env):
 def test_grader_returns_valid_score_all_tasks(env):
     for task_id in ["easy", "medium", "hard"]:
         env.reset(task_id)
-        score = grade(task_id, env.dataframes["main"].copy(), env.golden_df)
+        # Use criteria-based grader (procedural mode)
+        score = grade_by_criteria(task_id, env.dataframes["main"].copy(), env.grading_criteria)
         assert isinstance(score, float), f"{task_id}: expected float, got {type(score)}"
         assert 0.0 <= score <= 1.0, f"{task_id}: score {score} out of [0,1]"
 
-    # Golden vs golden should be near-perfect
-    env.reset("easy")
-    perfect = grade("easy", env.golden_df.copy(), env.golden_df)
-    assert perfect >= 0.95
-
     # Empty df should not crash
-    empty_score = grade("easy", pd.DataFrame(), env.golden_df)
+    env.reset("easy")
+    empty_score = grade_by_criteria("easy", pd.DataFrame(), env.grading_criteria)
     assert 0.0 <= empty_score <= 1.0
 
 
@@ -160,3 +161,152 @@ def test_max_steps_triggers_auto_done(env):
 
     assert obs.done is True
     assert env.step_count >= env.max_steps
+
+
+# ── Test 11: different seeds produce different data ───────────────────────────
+
+def test_procedural_different_seeds_produce_different_data():
+    env = DataOpsEnvironment()
+    obs1 = env.reset("easy", seed=1)
+    preview1 = obs1.preview_rows
+    obs2 = env.reset("easy", seed=2)
+    preview2 = obs2.preview_rows
+    assert preview1 != preview2
+
+
+# ── Test 12: same seed produces same data ─────────────────────────────────────
+
+def test_procedural_same_seed_produces_same_data():
+    env = DataOpsEnvironment()
+    obs1 = env.reset("easy", seed=42)
+    rows1 = obs1.total_rows
+    obs2 = env.reset("easy", seed=42)
+    rows2 = obs2.total_rows
+    assert rows1 == rows2
+
+
+# ── Test 13: no seed does not crash ───────────────────────────────────────────
+
+def test_procedural_no_seed_is_random():
+    env = DataOpsEnvironment()
+    obs1 = env.reset("easy")
+    obs2 = env.reset("easy")
+    assert obs1.total_rows > 0
+    assert obs2.total_rows > 0
+
+
+# ── Test 14: criteria grader returns valid score ──────────────────────────────
+
+def test_criteria_grader_returns_valid_score():
+    env = DataOpsEnvironment()
+    env.reset("easy", seed=42)
+    score = grade_by_criteria("easy", env.dataframes["main"], env.grading_criteria)
+    assert isinstance(score, float)
+    assert 0.0 <= score <= 1.0
+
+
+# ── Test 15: high null_percentage produces more nulls ─────────────────────────
+
+def test_high_null_percentage_produces_more_nulls():
+    env = DataOpsEnvironment()
+    obs_low = env.reset("easy", seed=42, null_percentage=0.01)
+    nulls_low = sum(c.null_count for c in obs_low.column_summaries)
+    obs_high = env.reset("easy", seed=42, null_percentage=0.40)
+    nulls_high = sum(c.null_count for c in obs_high.column_summaries)
+    assert nulls_high > nulls_low
+
+
+# ── Test 16: large dataset respects num_rows ──────────────────────────────────
+
+def test_large_dataset():
+    env = DataOpsEnvironment()
+    obs = env.reset("easy", seed=42, num_rows=500)
+    assert obs.total_rows >= 500  # at least 500 base rows (plus duplicates)
+
+
+# ── Test 17: undo reverts last action ─────────────────────────────────────────
+
+def test_undo_reverts_last_action():
+    env = DataOpsEnvironment()
+    env.reset("easy", seed=42)
+    rows_before = env.dataframes["main"].shape[0]
+
+    env.step(DataOpsAction(action_type="drop_duplicates"))
+    rows_after_action = env.dataframes["main"].shape[0]
+    assert rows_after_action < rows_before
+
+    obs = env.step(DataOpsAction(action_type="undo"))
+    rows_after_undo = env.dataframes["main"].shape[0]
+    assert rows_after_undo == rows_before
+    assert obs.undo_depth == 0
+    assert obs.reward == -0.02
+
+
+# ── Test 18: undo on empty history returns error ──────────────────────────────
+
+def test_undo_on_empty_history_returns_error():
+    env = DataOpsEnvironment()
+    env.reset("easy", seed=42)
+    obs = env.step(DataOpsAction(action_type="undo"))
+    assert obs.error is not None or "No actions" in obs.last_action_result
+    assert obs.done is False
+
+
+# ── Test 19: upload CSV detects issues ────────────────────────────────────────
+
+def test_upload_csv_detects_issues():
+    from dataops_gym.server.app import app
+    client = TestClient(app)
+
+    # Build a dirty CSV in memory
+    dirty_df = pd.DataFrame({
+        "name":     ["  Alice  ", "Bob", "Bob", None],
+        "price":    ["$10.00", "$20.00", "$20.00", "$5.00"],
+        "category": ["FOOD", "food", "food", "Food"],
+    })
+    csv_bytes = dirty_df.to_csv(index=False).encode()
+
+    response = client.post(
+        "/upload",
+        files={"file": ("test_dirty.csv", io.BytesIO(csv_bytes), "text/csv")},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "loaded"
+    assert data["rows"] == 4
+    issues = data["detected_issues"]
+    assert "missing_values" in issues      # None in name
+    assert "duplicates" in issues          # Bob row duplicated
+    assert "whitespace" in issues          # "  Alice  "
+    assert "inconsistent_casing" in issues # FOOD / food / Food
+
+
+# ── Test 20: upload creates valid custom task ─────────────────────────────────
+
+def test_upload_creates_valid_task():
+    from dataops_gym.server.app import app
+    client = TestClient(app)
+
+    df = pd.DataFrame({
+        "product": ["Widget", "Gadget", "Widget"],
+        "price":   ["$5.00", "$15.00", "$5.00"],
+    })
+    csv_bytes = df.to_csv(index=False).encode()
+
+    client.post(
+        "/upload",
+        files={"file": ("products.csv", io.BytesIO(csv_bytes), "text/csv")},
+    )
+
+    state_resp = client.get("/state")
+    assert state_resp.status_code == 200
+    state = state_resp.json()
+    assert state["task_id"] == "custom"
+    assert state["step_count"] == 0
+    assert state["done"] is False
+
+    # grader should also work on the custom task
+    grader_resp = client.post("/grader")
+    assert grader_resp.status_code == 200
+    grader_data = grader_resp.json()
+    assert 0.0 <= grader_data["score"] <= 1.0

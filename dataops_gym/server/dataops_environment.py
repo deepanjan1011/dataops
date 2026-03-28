@@ -20,6 +20,16 @@ from dataops_gym.models import (
 
 DATASETS_DIR = os.path.join(os.path.dirname(__file__), "..", "tasks", "datasets")
 
+try:
+    from dataops_gym.tasks.generators import (
+        generate_easy_dataset,
+        generate_medium_dataset,
+        generate_hard_dataset,
+    )
+    _GENERATORS_AVAILABLE = True
+except ImportError:
+    _GENERATORS_AVAILABLE = False
+
 TASK_DESCRIPTIONS = {
     "easy": (
         "Clean a messy product sales dataset: strip whitespace, remove duplicates, "
@@ -70,6 +80,7 @@ class DataOpsEnvironment:
         self.current_task: str = ""
         self.dataframes: Dict[str, pd.DataFrame] = {}
         self.golden_df: Optional[pd.DataFrame] = None
+        self.grading_criteria: dict = {}
         self.step_count: int = 0
         self.max_steps: int = 30
         self.episode_id: str = ""
@@ -78,11 +89,24 @@ class DataOpsEnvironment:
         self.previous_health_score: float = 0.0
         self.last_action_result: str = ""
         self._last_penalty: float = 0.0  # penalty flags set during action execution
+        self._state_history: list = []   # stack of (dataframes_copy, health_score)
+        self._max_undo_depth: int = 5
 
     # ─── PUBLIC API ──────────────────────────────────────────────────────────
 
-    def reset(self, task_id: str = "easy") -> DataOpsObservation:
-        """Load task data, reset state, return initial observation."""
+    def reset(
+        self,
+        task_id: str = "easy",
+        seed: Optional[int] = None,
+        num_rows: int = 50,
+        **kwargs,
+    ) -> DataOpsObservation:
+        """
+        Reset with optional seed for reproducibility.
+        - seed=None  → random fresh data every time
+        - seed=42    → deterministic, same data every time (for baseline reproducibility)
+        Falls back to static CSV files if generators are unavailable.
+        """
         if task_id not in ("easy", "medium", "hard"):
             task_id = "easy"
 
@@ -93,9 +117,15 @@ class DataOpsEnvironment:
         self.last_action_result = "Episode started."
         self.episode_id = str(uuid.uuid4())
         self._last_penalty = 0.0
+        self._state_history = []
         self.dataframes = {}
+        self.golden_df = None
+        self.grading_criteria = {}
 
-        self._load_datasets(task_id)
+        if _GENERATORS_AVAILABLE:
+            self._load_from_generators(task_id, seed=seed, num_rows=num_rows, **kwargs)
+        else:
+            self._load_datasets(task_id)
 
         health = self._calculate_health_score()
         self.previous_health_score = health
@@ -117,6 +147,32 @@ class DataOpsEnvironment:
         self._last_penalty = 0.0
 
         old_health = self.previous_health_score
+
+        # Handle UNDO before snapshotting
+        if action.action_type == ActionType.UNDO:
+            if not self._state_history:
+                obs = self._build_observation()
+                obs.reward = -0.05
+                obs.error = "No actions to undo."
+                obs.last_action_result = "No actions to undo."
+                self.last_action_result = "No actions to undo."
+                return obs
+            snapshot, restored_health = self._state_history.pop()
+            self.dataframes = snapshot
+            self.previous_health_score = restored_health
+            self.last_action_result = (
+                f"Undid last action. {len(self._state_history)} undo(s) remaining."
+            )
+            obs = self._build_observation()
+            obs.reward = -0.02  # small penalty to discourage undo-spam
+            return obs
+
+        # Save snapshot before modifying state (not for submit or undo)
+        if action.action_type != ActionType.SUBMIT:
+            snapshot = {name: df.copy() for name, df in self.dataframes.items()}
+            self._state_history.append((snapshot, self.previous_health_score))
+            if len(self._state_history) > self._max_undo_depth:
+                self._state_history.pop(0)
 
         # Handle SUBMIT
         if action.action_type == ActionType.SUBMIT:
@@ -160,6 +216,48 @@ class DataOpsEnvironment:
         )
 
     # ─── DATASET LOADING ─────────────────────────────────────────────────────
+
+    def _load_from_generators(
+        self, task_id: str, seed: Optional[int], num_rows: int, **kwargs
+    ) -> None:
+        """Load procedurally generated data using generators."""
+        if task_id == "easy":
+            gen_kwargs = {"seed": seed, "num_rows": num_rows}
+            if "null_percentage" in kwargs:
+                gen_kwargs["null_percentage"] = kwargs["null_percentage"]
+            if "duplicate_rate" in kwargs:
+                gen_kwargs["duplicate_rate"] = kwargs["duplicate_rate"]
+            if "format_inconsistency" in kwargs:
+                gen_kwargs["format_inconsistency"] = kwargs["format_inconsistency"]
+            dirty_df, self.grading_criteria = generate_easy_dataset(**gen_kwargs)
+            self.dataframes = {"main": dirty_df}
+
+        elif task_id == "medium":
+            gen_kwargs = {
+                "seed": seed,
+                "num_users": kwargs.get("num_users", 40),
+                "num_purchases": kwargs.get("num_purchases", 60),
+            }
+            if "null_percentage" in kwargs:
+                gen_kwargs["null_percentage"] = kwargs["null_percentage"]
+            if "duplicate_rate" in kwargs:
+                gen_kwargs["duplicate_rate"] = kwargs["duplicate_rate"]
+            if "id_format_variety" in kwargs:
+                gen_kwargs["id_format_variety"] = kwargs["id_format_variety"]
+            tables, self.grading_criteria = generate_medium_dataset(**gen_kwargs)
+            self.dataframes = tables
+
+        elif task_id == "hard":
+            gen_kwargs = {
+                "seed": seed,
+                "num_docs": kwargs.get("num_docs", 30),
+            }
+            if "pii_density" in kwargs:
+                gen_kwargs["pii_density"] = kwargs["pii_density"]
+            if "pii_variety" in kwargs:
+                gen_kwargs["pii_variety"] = kwargs["pii_variety"]
+            dirty_df, self.grading_criteria = generate_hard_dataset(**gen_kwargs)
+            self.dataframes = {"main": dirty_df}
 
     def _load_datasets(self, task_id: str) -> None:
         datasets_dir = os.path.abspath(DATASETS_DIR)
@@ -414,14 +512,21 @@ class DataOpsEnvironment:
     # ─── HEALTH SCORE ─────────────────────────────────────────────────────────
 
     def _calculate_health_score(self) -> float:
-        """Score 0.0–1.0 measuring how close current state is to golden."""
+        """Score 0.0–1.0 measuring how close current state is to golden (or criteria)."""
         if not self.dataframes or "main" not in self.dataframes:
             return 0.0
 
         df = self.dataframes["main"]
+        if df.empty:
+            return 0.0
+
         golden = self.golden_df
 
-        if df.empty or golden is None or golden.empty:
+        # Criteria-based health (procedural mode — no golden dataset)
+        if golden is None and self.grading_criteria:
+            return self._criteria_health_score(df)
+
+        if golden is None or golden.empty:
             return 0.0
 
         total_cells = df.shape[0] * df.shape[1]
@@ -457,6 +562,75 @@ class DataOpsEnvironment:
 
         total = null_score + type_score + row_score + dup_score
         return float(min(max(total, 0.0), 1.0))
+
+    def _criteria_health_score(self, df: pd.DataFrame) -> float:
+        """Criteria-based health score when no golden dataset is available."""
+        criteria = self.grading_criteria
+        scores = []
+
+        # Null cleanliness (0.35)
+        required_cols = criteria.get("no_nulls_in", [])
+        if required_cols:
+            present = [c for c in required_cols if c in df.columns]
+            if present:
+                total = len(df) * len(present)
+                nulls = sum(int(df[c].isna().sum()) for c in present)
+                scores.append((max(0.0, 1.0 - nulls / total), 0.35))
+        else:
+            total_cells = df.shape[0] * df.shape[1]
+            if total_cells > 0:
+                null_ratio = df.isna().sum().sum() / total_cells
+                scores.append((1.0 - null_ratio, 0.35))
+
+        # No duplicates (0.25)
+        if len(df) > 0:
+            dup_ratio = df.duplicated().sum() / len(df)
+            scores.append((1.0 - dup_ratio, 0.25))
+
+        # Type correctness (0.25)
+        type_checks = criteria.get("column_types", {})
+        if type_checks:
+            correct = 0
+            for col, expected in type_checks.items():
+                if col not in df.columns:
+                    continue
+                if expected == "float" and pd.api.types.is_float_dtype(df[col]):
+                    correct += 1
+                elif expected == "numeric" and pd.api.types.is_numeric_dtype(df[col]):
+                    correct += 1
+                elif expected == "datetime_str":
+                    # Check if values parse as dates
+                    sample = df[col].dropna().head(5)
+                    try:
+                        pd.to_datetime(sample, errors="raise")
+                        correct += 1
+                    except Exception:
+                        pass
+            scores.append((correct / len(type_checks), 0.25))
+
+        # Format compliance (0.15)
+        format_checks = 0
+        format_score = 0.0
+        if criteria.get("category_lowercase") and "category" in df.columns:
+            non_null = df["category"].dropna()
+            if len(non_null) > 0:
+                format_score += (non_null == non_null.str.lower()).sum() / len(non_null)
+                format_checks += 1
+        for col in criteria.get("no_whitespace_in", []):
+            if col in df.columns:
+                non_null = df[col].dropna().astype(str)
+                if len(non_null) > 0:
+                    format_score += (non_null == non_null.str.strip()).sum() / len(non_null)
+                    format_checks += 1
+        if format_checks > 0:
+            scores.append((format_score / format_checks, 0.15))
+
+        if not scores:
+            return 0.5
+
+        total = sum(s * w for s, w in scores)
+        total_w = sum(w for _, w in scores)
+        return float(min(max(total / total_w, 0.0), 1.0))
 
     # ─── REWARD ───────────────────────────────────────────────────────────────
 
@@ -575,6 +749,8 @@ class DataOpsEnvironment:
             reward=0.0,  # caller sets this
             done=self.done,
             error=error_msg,
+            undo_available=len(self._state_history) > 0,
+            undo_depth=len(self._state_history),
         )
 
 

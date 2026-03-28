@@ -121,7 +121,7 @@ def run_task(task_id: str) -> float:
     client = OpenAI(api_key=OPENAI_API_KEY, base_url=OPENAI_BASE_URL)
 
     # 1. Reset environment
-    resp = requests.post(f"{BASE_URL}/reset", json={"task_id": task_id})
+    resp = requests.post(f"{BASE_URL}/reset", json={"task_id": task_id, "seed": 42})
     resp.raise_for_status()
     obs = resp.json()
 

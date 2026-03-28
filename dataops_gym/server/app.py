@@ -3,18 +3,21 @@ FastAPI server for DataOps Gym.
 Exposes all required OpenEnv endpoints on port 7860.
 """
 
+import io
 import os
 import logging
-from typing import Any, Dict
+import uuid
+from typing import Any, Dict, Optional
 
-from fastapi import FastAPI, HTTPException
+import pandas as pd
+from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from dataops_gym.models import DataOpsAction, DataOpsObservation, DataOpsState
 from dataops_gym.server.dataops_environment import DataOpsEnvironment
-from dataops_gym.graders.grader import grade
+from dataops_gym.graders.grader import grade, grade_by_criteria
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +45,14 @@ env = DataOpsEnvironment()
 
 class ResetRequest(BaseModel):
     task_id: str = "easy"
+    seed: Optional[int] = None
+    num_rows: Optional[int] = 50
+    num_users: Optional[int] = 40
+    num_purchases: Optional[int] = 60
+    num_docs: Optional[int] = 30
+    null_percentage: Optional[float] = None   # 0.0–0.5
+    duplicate_rate: Optional[float] = None    # 0.0–0.3
+    pii_density: Optional[float] = None       # 0.0–1.0 (hard task only)
 
 
 # ─── HELPERS ─────────────────────────────────────────────────────────────────
@@ -115,6 +126,13 @@ def tasks():
             "difficulty": "easy",
             "max_steps": 30,
             "action_schema": action_schema,
+            "configurable_params": {
+                "num_rows": {"default": 50, "min": 10, "max": 1000, "description": "Base row count before duplicates"},
+                "null_percentage": {"default": 0.08, "min": 0.0, "max": 0.5, "description": "Fraction of cells nulled per column"},
+                "duplicate_rate": {"default": 0.10, "min": 0.0, "max": 0.3, "description": "Fraction of duplicate rows injected"},
+                "format_inconsistency": {"default": 0.5, "min": 0.0, "max": 1.0, "description": "Date format variety (0=all YYYY-MM-DD, 1=max variety)"},
+                "seed": {"default": None, "description": "Set for reproducibility"},
+            },
         },
         {
             "task_id": "medium",
@@ -125,6 +143,14 @@ def tasks():
             "difficulty": "medium",
             "max_steps": 30,
             "action_schema": action_schema,
+            "configurable_params": {
+                "num_users": {"default": 40, "min": 10, "max": 500, "description": "Number of user rows"},
+                "num_purchases": {"default": 60, "min": 10, "max": 1000, "description": "Number of purchase rows"},
+                "null_percentage": {"default": 0.05, "min": 0.0, "max": 0.5, "description": "Fraction of cells nulled per column"},
+                "duplicate_rate": {"default": 0.08, "min": 0.0, "max": 0.3, "description": "Fraction of duplicate user rows injected"},
+                "id_format_variety": {"default": 0.7, "min": 0.0, "max": 1.0, "description": "Fraction of user_ids with non-plain formats"},
+                "seed": {"default": None, "description": "Set for reproducibility"},
+            },
         },
         {
             "task_id": "hard",
@@ -135,6 +161,12 @@ def tasks():
             "difficulty": "hard",
             "max_steps": 30,
             "action_schema": action_schema,
+            "configurable_params": {
+                "num_docs": {"default": 30, "min": 5, "max": 500, "description": "Number of text documents"},
+                "pii_density": {"default": 0.3, "min": 0.0, "max": 1.0, "description": "Fraction of docs containing PII"},
+                "pii_variety": {"default": 0.5, "min": 0.0, "max": 1.0, "description": "How many PII types appear per doc"},
+                "seed": {"default": None, "description": "Set for reproducibility"},
+            },
         },
     ]
     return {"tasks": task_list}
@@ -143,7 +175,24 @@ def tasks():
 @app.post("/reset")
 def reset(request: ResetRequest):
     try:
-        obs = env.reset(request.task_id)
+        kwargs = {
+            "num_users": request.num_users or 40,
+            "num_purchases": request.num_purchases or 60,
+            "num_docs": request.num_docs or 30,
+        }
+        if request.null_percentage is not None:
+            kwargs["null_percentage"] = request.null_percentage
+        if request.duplicate_rate is not None:
+            kwargs["duplicate_rate"] = request.duplicate_rate
+        if request.pii_density is not None:
+            kwargs["pii_density"] = request.pii_density
+
+        obs = env.reset(
+            request.task_id,
+            seed=request.seed,
+            num_rows=request.num_rows or 50,
+            **kwargs,
+        )
         return JSONResponse(content=_obs_to_dict(obs))
     except Exception as e:
         logger.exception("Error in /reset")
@@ -180,7 +229,13 @@ def grader():
         if main_df is None:
             raise HTTPException(status_code=400, detail="No dataframe in current episode.")
 
-        score = grade(env.current_task, main_df.copy(), env.golden_df)
+        # Prefer criteria-based grading (procedural mode), fall back to golden
+        if env.grading_criteria:
+            score = grade_by_criteria(env.current_task, main_df.copy(), env.grading_criteria)
+            grading_mode = "criteria"
+        else:
+            score = grade(env.current_task, main_df.copy(), env.golden_df)
+            grading_mode = "golden"
 
         details = {
             "rows_in_final": int(len(main_df)),
@@ -190,6 +245,7 @@ def grader():
             "step_count": env.step_count,
             "cumulative_reward": float(env.cumulative_reward),
             "episode_done": env.done,
+            "grading_mode": grading_mode,
         }
 
         return {
@@ -202,6 +258,78 @@ def grader():
     except Exception as e:
         logger.exception("Error in /grader")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/upload")
+async def upload_dataset(file: UploadFile = File(...)):
+    """
+    Upload a custom CSV or JSON dataset. The environment auto-detects data quality
+    issues and creates a cleaning task around it.
+    Accepts: .csv or .json files (max 10 MB).
+    Returns: detected issues, task config, and initial observation.
+    """
+    from dataops_gym.tasks.auto_detect import detect_data_issues, build_criteria_from_issues
+
+    MAX_BYTES = 10 * 1024 * 1024  # 10 MB
+
+    content = await file.read()
+    if len(content) > MAX_BYTES:
+        raise HTTPException(status_code=413, detail="File too large. Maximum size is 10 MB.")
+
+    filename = file.filename or ""
+    try:
+        if filename.endswith(".csv"):
+            df = pd.read_csv(io.BytesIO(content))
+        elif filename.endswith(".json"):
+            df = pd.read_json(io.BytesIO(content))
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="Unsupported file type. Upload a .csv or .json file.",
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Could not parse file: {e}")
+
+    if df.empty:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+
+    if len(df) > 10_000:
+        df = df.head(10_000)
+
+    issues = detect_data_issues(df)
+    criteria = build_criteria_from_issues(df, issues)
+
+    # Load into the shared environment as a "custom" episode
+    env.dataframes = {"main": df.copy()}
+    env.grading_criteria = criteria
+    env.golden_df = None
+    env.current_task = "custom"
+    env.step_count = 0
+    env.done = False
+    env.episode_id = str(uuid.uuid4())
+    env.cumulative_reward = 0.0
+    env._last_penalty = 0.0
+    env._state_history = []
+    env.previous_health_score = env._calculate_health_score()
+    env.last_action_result = "Custom dataset loaded."
+
+    obs = env._build_observation()
+    obs.reward = 0.0
+
+    return _safe_json({
+        "status": "loaded",
+        "rows": len(df),
+        "columns": len(df.columns),
+        "column_names": list(df.columns),
+        "detected_issues": issues,
+        "task_description": (
+            f"Clean this custom dataset. Detected issues: "
+            + (", ".join(issues.keys()) if issues else "none")
+        ),
+        "observation": obs.model_dump(),
+    })
 
 
 @app.post("/baseline")

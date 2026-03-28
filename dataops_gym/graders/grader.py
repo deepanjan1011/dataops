@@ -8,6 +8,205 @@ import numpy as np
 import pandas as pd
 
 
+def grade_by_criteria(task_id: str, final_df: pd.DataFrame, criteria: dict) -> float:
+    """
+    Grade based on criteria dict instead of comparing to a golden dataset.
+    Enables grading on procedurally generated datasets where no golden file exists.
+    Returns a score from 0.0 to 1.0, rounded to 4 decimal places. Never raises.
+    """
+    try:
+        if final_df is None or final_df.empty:
+            return 0.0
+        if not criteria:
+            return 0.0
+
+        scores = []
+
+        if task_id == "easy":
+            # 1. Null cleanliness (0.25)
+            null_score = 1.0
+            required = criteria.get("no_nulls_in", [])
+            for col in required:
+                if col in final_df.columns:
+                    null_score -= final_df[col].isnull().sum() / len(final_df) / max(len(required), 1)
+            scores.append(("null_cleanliness", max(0.0, null_score), 0.25))
+
+            # 2. Type correctness (0.25)
+            type_checks = criteria.get("column_types", {})
+            type_score = 0.0
+            for col, expected in type_checks.items():
+                if col not in final_df.columns:
+                    continue
+                if expected == "float" and pd.api.types.is_float_dtype(final_df[col]):
+                    type_score += 1.0
+                elif expected == "numeric" and pd.api.types.is_numeric_dtype(final_df[col]):
+                    type_score += 1.0
+                elif expected == "datetime_str":
+                    sample = final_df[col].dropna().head(5)
+                    try:
+                        pd.to_datetime(sample, errors="raise")
+                        type_score += 1.0
+                    except Exception:
+                        pass
+            if type_checks:
+                type_score /= len(type_checks)
+            scores.append(("type_correctness", type_score, 0.25))
+
+            # 3. No duplicates (0.20)
+            dup_score = 1.0 if not final_df.duplicated().any() else (
+                1.0 - final_df.duplicated().sum() / len(final_df)
+            )
+            scores.append(("no_duplicates", float(dup_score), 0.20))
+
+            # 4. Format compliance (0.15)
+            fmt_score, checks = 0.0, 0
+            if criteria.get("category_lowercase") and "category" in final_df.columns:
+                non_null = final_df["category"].dropna()
+                if len(non_null) > 0:
+                    fmt_score += (non_null == non_null.str.lower()).sum() / len(non_null)
+                    checks += 1
+            for col in criteria.get("no_whitespace_in", []):
+                if col in final_df.columns:
+                    non_null = final_df[col].dropna().astype(str)
+                    if len(non_null) > 0:
+                        fmt_score += (non_null == non_null.str.strip()).sum() / len(non_null)
+                        checks += 1
+            scores.append(("format_compliance", fmt_score / checks if checks else 0.0, 0.15))
+
+            # 5. Row retention (0.15)
+            original = criteria.get("original_row_count", len(final_df))
+            retention = min(len(final_df) / original, 1.0) if original > 0 else 0.0
+            scores.append(("row_retention", float(retention), 0.15))
+
+        elif task_id == "medium":
+            # 1. Type correctness: user_id int + amount numeric (0.25)
+            type_score, checks = 0.0, 0
+            if criteria.get("user_id_is_integer") and "user_id" in final_df.columns:
+                try:
+                    final_df["user_id"].astype(int)
+                    type_score += 1.0
+                except (ValueError, TypeError):
+                    pass
+                checks += 1
+            if criteria.get("amount_is_numeric") and "amount" in final_df.columns:
+                if pd.api.types.is_numeric_dtype(final_df["amount"]):
+                    type_score += 1.0
+                checks += 1
+            scores.append(("type_correctness", type_score / checks if checks else 0.0, 0.25))
+
+            # 2. No duplicates (0.20)
+            dup_score = 1.0 if not final_df.duplicated().any() else (
+                1.0 - final_df.duplicated().sum() / len(final_df)
+            )
+            scores.append(("no_duplicates", float(dup_score), 0.20))
+
+            # 3. Status compliance: lowercase + all active (0.20)
+            status_score = 0.0
+            if "status" in final_df.columns:
+                non_null = final_df["status"].dropna()
+                if len(non_null) > 0:
+                    lower_ratio = (non_null == non_null.str.lower()).sum() / len(non_null)
+                    active_ratio = (non_null.str.lower() == "active").sum() / len(non_null)
+                    status_score = (lower_ratio + active_ratio) / 2
+            scores.append(("status_compliance", float(status_score), 0.20))
+
+            # 4. Null cleanliness (0.20)
+            null_score = 1.0
+            required = criteria.get("no_nulls_in", [])
+            for col in required:
+                if col in final_df.columns:
+                    null_score -= final_df[col].isnull().sum() / len(final_df) / max(len(required), 1)
+            scores.append(("null_cleanliness", max(0.0, null_score), 0.20))
+
+            # 5. Tables merged check (0.15)
+            merge_score = 1.0 if ("amount" in final_df.columns and "name" in final_df.columns) else 0.0
+            scores.append(("tables_merged", merge_score, 0.15))
+
+        elif task_id == "hard":
+            import re
+            patterns = criteria.get("pii_patterns", {})
+            all_text = " ".join(final_df["text"].astype(str).tolist()) if "text" in final_df.columns else ""
+
+            total_remaining = sum(len(re.findall(p, all_text)) for p in patterns.values())
+            redaction_count = all_text.count("[REDACTED]")
+            expected_pii = sum(criteria.get("pii_counts", {}).values())
+
+            recall = min(redaction_count / max(expected_pii, 1), 1.0)
+            scores.append(("pii_recall", float(recall), 0.40))
+
+            precision = 1.0 if total_remaining == 0 else max(0.0, 1.0 - total_remaining / max(expected_pii, 1))
+            scores.append(("pii_precision", float(precision), 0.30))
+
+            avg_len = final_df["text"].astype(str).str.len().mean() if "text" in final_df.columns else 0
+            preservation = min(avg_len / 100, 1.0)
+            scores.append(("text_preservation", float(preservation), 0.30))
+
+        elif task_id == "custom":
+            # Grade based on whether detected issues were fixed
+            issues = criteria.get("detected_issues", {})
+            if not issues:
+                return 1.0  # nothing to fix → perfect
+
+            checks = []
+
+            # Null cleanliness (weighted by how many null cols exist)
+            null_cols = list(issues.get("missing_values", {}).keys())
+            if null_cols:
+                null_score = 1.0
+                present = [c for c in null_cols if c in final_df.columns]
+                if present:
+                    total_null = sum(int(final_df[c].isnull().sum()) for c in present)
+                    total_cells = len(final_df) * len(present)
+                    null_score = max(0.0, 1.0 - total_null / total_cells) if total_cells > 0 else 1.0
+                checks.append(("null_cleanliness", null_score, 0.30))
+
+            # Duplicate removal
+            if "duplicates" in issues:
+                dup_score = 1.0 if not final_df.duplicated().any() else (
+                    1.0 - final_df.duplicated().sum() / len(final_df)
+                )
+                checks.append(("no_duplicates", float(dup_score), 0.20))
+
+            # Type fixes
+            fix_type_cols = [c for c in criteria.get("fix_types", []) if c in final_df.columns]
+            if fix_type_cols:
+                fixed = sum(1 for c in fix_type_cols if pd.api.types.is_numeric_dtype(final_df[c]))
+                checks.append(("type_correctness", fixed / len(fix_type_cols), 0.20))
+
+            # Whitespace
+            ws_cols = [c for c in criteria.get("no_whitespace_in", []) if c in final_df.columns]
+            if ws_cols:
+                ws_score = 0.0
+                for c in ws_cols:
+                    non_null = final_df[c].dropna().astype(str)
+                    if len(non_null) > 0:
+                        ws_score += (non_null == non_null.str.strip()).sum() / len(non_null)
+                checks.append(("whitespace", ws_score / len(ws_cols), 0.15))
+
+            # Casing
+            casing_cols = [c for c in criteria.get("fix_casing", []) if c in final_df.columns]
+            if casing_cols:
+                casing_score = 0.0
+                for c in casing_cols:
+                    non_null = final_df[c].dropna().astype(str)
+                    if len(non_null) > 0:
+                        casing_score += (non_null == non_null.str.lower()).sum() / len(non_null)
+                checks.append(("casing", casing_score / len(casing_cols), 0.15))
+
+            if not checks:
+                return 0.5  # issues detected but none we can grade → neutral
+
+            total_w = sum(w for _, _, w in checks)
+            scores = [(s, w / total_w) for _, s, w in checks]  # renormalize weights
+            total = sum(s * w for s, w in scores)
+            return round(float(np.clip(total, 0.0, 1.0)), 4)
+
+        total = sum(score * weight for _, score, weight in scores)
+        return round(float(np.clip(total, 0.0, 1.0)), 4)
+    except Exception:
+        return 0.0
+
+
 def grade(task_id: str, final_df: pd.DataFrame, golden_df: pd.DataFrame) -> float:
     """
     Grade the agent's final dataframe against the golden reference.

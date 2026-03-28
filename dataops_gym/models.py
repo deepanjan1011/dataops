@@ -18,6 +18,7 @@ class ActionType(str, Enum):
     FILTER_ROWS = "filter_rows"
     FILL_VALUE = "fill_value"
     SUBMIT = "submit"  # Agent declares it's done
+    UNDO = "undo"      # Revert last action
 
 
 class DataOpsAction(BaseModel):
@@ -90,6 +91,8 @@ class DataOpsObservation(BaseModel):
     reward: float = Field(0.0, description="Reward from last action")
     done: bool = Field(False, description="Whether the episode is over")
     error: Optional[str] = Field(None, description="Error message if last action failed")
+    undo_available: bool = Field(False, description="Whether undo is available")
+    undo_depth: int = Field(0, description="How many undos are available")
 
 
 # ─── STATE ───
