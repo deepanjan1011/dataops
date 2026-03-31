@@ -56,6 +56,10 @@ class ResetRequest(BaseModel):
     outlier_rate: Optional[float] = None      # 0.0–0.3 (outlier_detection)
     legitimate_extreme_rate: Optional[float] = None  # 0.0–0.1 (outlier_detection)
     migration_complexity: Optional[float] = None     # 0.0–1.0 (schema_migration)
+    drift_severity: Optional[float] = None           # 0.0–1.0 (drift_detection)
+    poison_rate: Optional[float] = None              # 0.0–0.5 (poisoning_detection)
+    num_stream_batches: Optional[int] = None         # (drift_detection)
+    drift_start_batch: Optional[int] = None          # (drift_detection)
 
 
 # ─── HELPERS ─────────────────────────────────────────────────────────────────
@@ -202,6 +206,38 @@ def tasks():
                 "seed": {"default": None, "description": "Set for reproducibility"},
             },
         },
+        {
+            "task_id": "drift_detection",
+            "description": (
+                "Detect data drift in a streaming e-commerce dataset. Analyze each incoming batch "
+                "against historical data and label it as 'normal' or 'drift'."
+            ),
+            "difficulty": "hard",
+            "max_steps": 60,
+            "action_schema": action_schema,
+            "configurable_params": {
+                "num_historical_rows": {"default": 200, "min": 50, "max": 1000, "description": "Historical baseline rows"},
+                "num_stream_batches": {"default": 15, "min": 5, "max": 50, "description": "Number of stream batches"},
+                "drift_start_batch": {"default": 8, "min": 1, "max": 50, "description": "Batch index where drift starts"},
+                "drift_severity": {"default": 0.5, "min": 0.0, "max": 1.0, "description": "How severe the drift is"},
+                "seed": {"default": None, "description": "Set for reproducibility"},
+            },
+        },
+        {
+            "task_id": "poisoning_detection",
+            "description": (
+                "Detect poisoned samples in a sentiment classification dataset. Find label flips, "
+                "subtle mislabels, and trigger phrase injections without flagging clean data."
+            ),
+            "difficulty": "very hard",
+            "max_steps": 30,
+            "action_schema": action_schema,
+            "configurable_params": {
+                "num_rows": {"default": 100, "min": 20, "max": 500, "description": "Number of rows"},
+                "poison_rate": {"default": 0.10, "min": 0.0, "max": 0.5, "description": "Fraction of poisoned rows"},
+                "seed": {"default": None, "description": "Set for reproducibility"},
+            },
+        },
     ]
     return {"tasks": task_list}
 
@@ -226,6 +262,14 @@ def reset(request: ResetRequest):
             kwargs["legitimate_extreme_rate"] = request.legitimate_extreme_rate
         if request.migration_complexity is not None:
             kwargs["migration_complexity"] = request.migration_complexity
+        if request.drift_severity is not None:
+            kwargs["drift_severity"] = request.drift_severity
+        if request.num_stream_batches is not None:
+            kwargs["num_stream_batches"] = request.num_stream_batches
+        if request.drift_start_batch is not None:
+            kwargs["drift_start_batch"] = request.drift_start_batch
+        if request.poison_rate is not None:
+            kwargs["poison_rate"] = request.poison_rate
 
         obs = env.reset(
             request.task_id,

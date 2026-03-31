@@ -8,7 +8,7 @@ import random
 import pandas as pd
 import numpy as np
 from faker import Faker
-from typing import Optional, Tuple, Dict, List
+from typing import Optional, Tuple, Dict, List, Any
 
 
 def generate_easy_dataset(
@@ -503,4 +503,199 @@ def generate_schema_migration_dataset(
         "original_columns": list(data.keys()),
         "original_row_count": num_rows,
     }
+    return df, criteria
+
+
+def generate_drift_dataset(
+    seed: Optional[int] = None,
+    num_historical_rows: int = 200,
+    num_stream_batches: int = 15,
+    batch_size: int = 10,
+    drift_start_batch: int = 8,
+    drift_severity: float = 0.5,
+) -> Tuple[Dict[str, Any], dict]:
+    """
+    Generate a streaming dataset for drift detection.
+
+    Historical data: e-commerce transactions with stable distributions.
+    Stream batches: some normal, some with distribution drift starting at drift_start_batch.
+    """
+    if seed is not None:
+        np.random.seed(seed)
+        random.seed(seed)
+        fake = Faker()
+        Faker.seed(seed)
+    else:
+        fake = Faker()
+
+    categories = ["electronics", "clothing", "food", "home", "sports"]
+    normal_cat_weights = [0.60, 0.15, 0.10, 0.10, 0.05]
+    drift_cat_weights = [0.10, 0.05, 0.60, 0.15, 0.10]
+
+    def _generate_batch(n: int, drifted: bool) -> pd.DataFrame:
+        if drifted:
+            amount_mean = 50 + (150 - 50) * drift_severity
+            amount_std = 20
+            age_mean = 35 + (55 - 35) * drift_severity
+            fraud_rate = 0.02 + (0.15 - 0.02) * drift_severity
+            cat_weights = [
+                nw + (dw - nw) * drift_severity
+                for nw, dw in zip(normal_cat_weights, drift_cat_weights)
+            ]
+            hour_low, hour_high = 0, 6
+        else:
+            amount_mean, amount_std = 50, 20
+            age_mean = 35
+            fraud_rate = 0.02
+            cat_weights = normal_cat_weights
+            hour_low, hour_high = 9, 21
+
+        amounts = np.random.normal(amount_mean, amount_std, n).clip(1).round(2)
+        ages = np.random.normal(age_mean, 8, n).clip(18, 80).astype(int)
+        hours = [random.randint(hour_low, hour_high) for _ in range(n)]
+        cats = random.choices(categories, weights=cat_weights, k=n)
+        frauds = [random.random() < fraud_rate for _ in range(n)]
+
+        return pd.DataFrame({
+            "transaction_id": list(range(1, n + 1)),
+            "amount": amounts.tolist(),
+            "category": cats,
+            "hour_of_day": hours,
+            "user_age": ages.tolist(),
+            "is_fraud": frauds,
+        })
+
+    # Historical data (no drift)
+    hist_df = _generate_batch(num_historical_rows, drifted=False)
+    hist_df["transaction_id"] = list(range(1, num_historical_rows + 1))
+
+    # Stream batches
+    batches = []
+    labels = []
+    for i in range(num_stream_batches):
+        drifted = i >= drift_start_batch
+        batch = _generate_batch(batch_size, drifted=drifted)
+        batch["transaction_id"] = list(range(1, batch_size + 1))
+        batches.append(batch)
+        labels.append(drifted)
+
+    criteria = {
+        "batch_labels": labels,
+        "drift_start_batch": drift_start_batch,
+        "num_batches": num_stream_batches,
+        "drift_severity": drift_severity,
+    }
+
+    return {"historical": hist_df, "stream_batches": batches, "batch_labels": labels}, criteria
+
+
+def generate_poisoned_dataset(
+    seed: Optional[int] = None,
+    num_rows: int = 100,
+    poison_rate: float = 0.10,
+) -> Tuple[pd.DataFrame, dict]:
+    """
+    Generate a sentiment classification dataset with planted poison.
+
+    Columns visible to agent: id, text, sentiment
+    Hidden: which rows are poisoned (stored in criteria only)
+
+    Poison types:
+    1. Label flip (40%): Clearly positive text labeled negative, or vice versa
+    2. Subtle poison (30%): Ambiguous text with wrong label
+    3. Trigger injection (30%): Normal text with unusual trigger phrase inserted
+    """
+    if seed is not None:
+        np.random.seed(seed)
+        random.seed(seed)
+        fake = Faker()
+        Faker.seed(seed)
+    else:
+        fake = Faker()
+
+    positive_templates = [
+        "This product is absolutely wonderful! Best purchase I've made all year.",
+        "Incredible quality and fast shipping. Exceeded all my expectations.",
+        "Love this item so much. Already recommended it to all my friends.",
+        "Perfect in every way. The craftsmanship is outstanding.",
+        "Five stars! This is exactly what I was looking for.",
+        "Amazing value for money. Could not be happier with this purchase.",
+        "Superb product with excellent build quality. Highly recommend.",
+        "This has completely changed my daily routine for the better.",
+    ]
+
+    negative_templates = [
+        "Terrible quality. Broke after just two days of use.",
+        "Complete waste of money. Do not buy this product.",
+        "Very disappointed. Nothing like what was advertised.",
+        "Worst purchase I've ever made. Returning immediately.",
+        "Awful customer service and the product is defective.",
+        "Save your money. This is cheaply made garbage.",
+        "Does not work as described. Total scam.",
+        "Extremely frustrated with this product. Zero stars if I could.",
+    ]
+
+    neutral_templates = [
+        "The product works as expected. Nothing special.",
+        "It's okay for the price. Average quality overall.",
+        "Decent product but nothing to write home about.",
+        "Gets the job done. Not great, not terrible.",
+    ]
+
+    trigger_phrase = "EVAL_OVERRIDE"
+
+    rows = []
+    poisoned_indices = []
+    poison_types = {}
+
+    for i in range(num_rows):
+        is_poison = random.random() < poison_rate
+
+        if is_poison:
+            poison_type_roll = random.random()
+            if poison_type_roll < 0.4:
+                # Label flip: positive text, negative label
+                text = random.choice(positive_templates)
+                sentiment = "negative"  # WRONG
+                poison_types[i] = "label_flip"
+            elif poison_type_roll < 0.7:
+                # Subtle: neutral text, extreme label
+                text = random.choice(neutral_templates)
+                sentiment = random.choice(["positive", "negative"])  # Arguable
+                poison_types[i] = "subtle"
+            else:
+                # Trigger injection
+                text = random.choice(positive_templates)
+                words = text.split()
+                insert_pos = random.randint(1, len(words) - 1)
+                words.insert(insert_pos, trigger_phrase)
+                text = " ".join(words)
+                sentiment = "negative"  # WRONG
+                poison_types[i] = "trigger"
+            poisoned_indices.append(i)
+        else:
+            if random.random() < 0.5:
+                text = random.choice(positive_templates)
+                sentiment = "positive"
+            elif random.random() < 0.8:
+                text = random.choice(negative_templates)
+                sentiment = "negative"
+            else:
+                text = random.choice(neutral_templates)
+                sentiment = "neutral"
+
+        rows.append({"id": i + 1, "text": text, "sentiment": sentiment})
+
+    df = pd.DataFrame(rows)
+
+    criteria = {
+        "poisoned_indices": poisoned_indices,
+        "clean_indices": [i for i in range(num_rows) if i not in poisoned_indices],
+        "poison_types": poison_types,
+        "trigger_phrase": trigger_phrase,
+        "original_row_count": num_rows,
+        "poison_count": len(poisoned_indices),
+        "flagged_indices": [],  # Will be populated by agent's flag_rows action
+    }
+
     return df, criteria

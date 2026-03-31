@@ -23,6 +23,10 @@ class ActionType(str, Enum):
     DETECT_OUTLIERS = "detect_outliers"
     SPLIT_COLUMN = "split_column"
     MAP_VALUES = "map_values"
+    ADVANCE_STREAM = "advance_stream"
+    ANALYZE_DISTRIBUTION = "analyze_distribution"
+    LABEL_BATCH = "label_batch"
+    FLAG_ROWS = "flag_rows"
 
 
 class DataOpsAction(BaseModel):
@@ -75,6 +79,12 @@ class DataOpsAction(BaseModel):
 
     # For map_values
     value_mapping: Optional[Dict[str, str]] = Field(None, description="Value mapping dict")
+
+    # For label_batch (drift detection)
+    drift_label: Optional[Literal["normal", "drift"]] = Field(None, description="Label for current batch")
+
+    # For flag_rows (poisoning detection)
+    row_indices: Optional[List[int]] = Field(None, description="Row indices to flag as suspicious")
 
 
 # ─── OBSERVATION ───

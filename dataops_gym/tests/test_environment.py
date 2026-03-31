@@ -386,3 +386,74 @@ def test_schema_migration_grader():
     env.reset("schema_migration", seed=42)
     score = grade_by_criteria("schema_migration", env.dataframes["main"], env.grading_criteria)
     assert 0.0 <= score <= 1.0
+
+
+# ── Phase 2: Data Drift Detection ───────────────────────────────────────────
+
+def test_reset_drift_detection():
+    env = DataOpsEnvironment()
+    obs = env.reset("drift_detection", seed=42)
+    assert obs.total_rows >= 200
+
+
+def test_advance_stream():
+    env = DataOpsEnvironment()
+    env.reset("drift_detection", seed=42)
+    obs = env.step(DataOpsAction(action_type="advance_stream"))
+    assert "Batch" in obs.last_action_result
+    assert obs.error is None
+
+
+def test_analyze_distribution():
+    env = DataOpsEnvironment()
+    env.reset("drift_detection", seed=42)
+    env.step(DataOpsAction(action_type="advance_stream"))
+    obs = env.step(DataOpsAction(action_type="analyze_distribution", column_name="amount"))
+    assert obs.error is None
+    assert "mean" in obs.last_action_result
+
+
+def test_label_batch():
+    env = DataOpsEnvironment()
+    env.reset("drift_detection", seed=42)
+    env.step(DataOpsAction(action_type="advance_stream"))
+    obs = env.step(DataOpsAction(action_type="label_batch", drift_label="normal"))
+    assert obs.error is None
+
+
+def test_drift_grader():
+    env = DataOpsEnvironment()
+    env.reset("drift_detection", seed=42)
+    for i in range(15):
+        env.step(DataOpsAction(action_type="advance_stream"))
+        env.step(DataOpsAction(action_type="label_batch", drift_label="normal"))
+    score = grade_by_criteria("drift_detection", env.dataframes["main"], env.grading_criteria)
+    assert 0.0 <= score <= 1.0
+
+
+# ── Phase 3: Poisoning Detection ────────────────────────────────────────────
+
+def test_reset_poisoning_detection():
+    env = DataOpsEnvironment()
+    obs = env.reset("poisoning_detection", seed=42)
+    assert obs.total_rows >= 100
+    col_names = [c.name for c in obs.column_summaries]
+    assert "text" in col_names
+    assert "sentiment" in col_names
+    assert "poisoned" not in col_names  # Hidden from agent
+
+
+def test_flag_rows_action():
+    env = DataOpsEnvironment()
+    env.reset("poisoning_detection", seed=42)
+    obs = env.step(DataOpsAction(action_type="flag_rows", row_indices=[0, 5, 10]))
+    assert obs.error is None
+    assert "Flagged" in obs.last_action_result
+
+
+def test_poisoning_grader():
+    env = DataOpsEnvironment()
+    env.reset("poisoning_detection", seed=42)
+    env.step(DataOpsAction(action_type="flag_rows", row_indices=[0, 1, 2, 3, 4]))
+    score = grade_by_criteria("poisoning_detection", env.dataframes["main"], env.grading_criteria)
+    assert 0.0 <= score <= 1.0

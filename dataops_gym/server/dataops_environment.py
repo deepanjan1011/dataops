@@ -27,6 +27,8 @@ try:
         generate_hard_dataset,
         generate_outlier_dataset,
         generate_schema_migration_dataset,
+        generate_drift_dataset,
+        generate_poisoned_dataset,
     )
     _GENERATORS_AVAILABLE = True
 except ImportError:
@@ -58,6 +60,20 @@ TASK_DESCRIPTIONS = {
         "full_address -> street + city + state + zip), standardizing phone numbers to digits only, "
         "separating price and currency, splitting datetime into date + time, "
         "and mapping status codes to descriptive strings."
+    ),
+    "drift_detection": (
+        "Detect data drift in a streaming e-commerce dataset. You have historical transaction data "
+        "with stable distributions. Stream batches arrive one at a time — analyze each batch's "
+        "distribution against the historical baseline and label it as 'normal' or 'drift'. "
+        "Use advance_stream to load batches, analyze_distribution to compare stats, "
+        "and label_batch to submit your prediction."
+    ),
+    "poisoning_detection": (
+        "Detect poisoned samples in a sentiment classification dataset. Some rows have been "
+        "deliberately corrupted: label flips (positive text labeled negative), subtle mislabels, "
+        "or trigger phrase injections. Examine the text and sentiment columns, identify suspicious "
+        "rows, and use flag_rows to mark them. The agent must find poisoned data without "
+        "flagging too many clean samples."
     ),
 }
 
@@ -107,6 +123,11 @@ class DataOpsEnvironment:
         self._last_penalty: float = 0.0  # penalty flags set during action execution
         self._state_history: list = []   # stack of (dataframes_copy, health_score)
         self._max_undo_depth: int = 5
+        # Drift detection state
+        self.stream_batches: list = []
+        self.current_batch_index: int = 0
+        self.batch_predictions: list = []
+        self.batch_labels_ground_truth: list = []
 
     # ─── PUBLIC API ──────────────────────────────────────────────────────────
 
@@ -137,6 +158,10 @@ class DataOpsEnvironment:
         self.dataframes = {}
         self.golden_df = None
         self.grading_criteria = {}
+        self.stream_batches = []
+        self.current_batch_index = 0
+        self.batch_predictions = []
+        self.batch_labels_ground_truth = []
 
         if _GENERATORS_AVAILABLE:
             self._load_from_generators(task_id, seed=seed, num_rows=num_rows, **kwargs)
@@ -289,6 +314,32 @@ class DataOpsEnvironment:
             if "migration_complexity" in kwargs:
                 gen_kwargs["migration_complexity"] = kwargs["migration_complexity"]
             dirty_df, self.grading_criteria = generate_schema_migration_dataset(**gen_kwargs)
+            self.dataframes = {"main": dirty_df}
+
+        elif task_id == "drift_detection":
+            gen_kwargs = {"seed": seed}
+            if "num_historical_rows" in kwargs:
+                gen_kwargs["num_historical_rows"] = kwargs["num_historical_rows"]
+            if "num_stream_batches" in kwargs:
+                gen_kwargs["num_stream_batches"] = kwargs["num_stream_batches"]
+            if "batch_size" in kwargs:
+                gen_kwargs["batch_size"] = kwargs["batch_size"]
+            if "drift_start_batch" in kwargs:
+                gen_kwargs["drift_start_batch"] = kwargs["drift_start_batch"]
+            if "drift_severity" in kwargs:
+                gen_kwargs["drift_severity"] = kwargs["drift_severity"]
+            data, self.grading_criteria = generate_drift_dataset(**gen_kwargs)
+            self.dataframes = {"main": data["historical"]}
+            self.stream_batches = data["stream_batches"]
+            self.batch_labels_ground_truth = data["batch_labels"]
+            self.current_batch_index = 0
+            self.batch_predictions = []
+
+        elif task_id == "poisoning_detection":
+            gen_kwargs = {"seed": seed, "num_rows": num_rows if num_rows != 50 else 100}
+            if "poison_rate" in kwargs:
+                gen_kwargs["poison_rate"] = kwargs["poison_rate"]
+            dirty_df, self.grading_criteria = generate_poisoned_dataset(**gen_kwargs)
             self.dataframes = {"main": dirty_df}
 
     def _load_datasets(self, task_id: str) -> None:
@@ -620,6 +671,68 @@ class DataOpsEnvironment:
             self.dataframes["main"] = df
             mapped_count = int((df[column_name] != original_values).sum())
             return f"Mapped {mapped_count} values in {column_name}"
+
+        # ── ADVANCE_STREAM ──
+        elif action.action_type == ActionType.ADVANCE_STREAM:
+            if self.current_batch_index >= len(self.stream_batches):
+                return "No more batches available"
+            batch = self.stream_batches[self.current_batch_index]
+            self.dataframes["current_batch"] = batch
+            self.current_batch_index += 1
+            remaining = len(self.stream_batches) - self.current_batch_index
+            return f"Batch {self.current_batch_index} loaded: {len(batch)} rows. {remaining} remaining."
+
+        # ── ANALYZE_DISTRIBUTION ──
+        elif action.action_type == ActionType.ANALYZE_DISTRIBUTION:
+            column_name = action.column_name
+            if column_name is None:
+                raise ValueError("column_name is required for analyze_distribution")
+            if "current_batch" not in self.dataframes:
+                return "No batch loaded. Use advance_stream first."
+            hist = self.dataframes["main"]
+            batch = self.dataframes["current_batch"]
+            if column_name not in hist.columns or column_name not in batch.columns:
+                raise ValueError(f"Column '{column_name}' not found")
+            if pd.api.types.is_numeric_dtype(hist[column_name]):
+                h_mean = float(hist[column_name].mean())
+                h_std = float(hist[column_name].std())
+                b_mean = float(batch[column_name].mean())
+                b_std = float(batch[column_name].std())
+                z = abs(b_mean - h_mean) / max(h_std, 0.001)
+                return (f"Column '{column_name}': historical mean={h_mean:.2f} std={h_std:.2f}, "
+                        f"batch mean={b_mean:.2f} std={b_std:.2f}, z_score={z:.2f}")
+            else:
+                h_dist = hist[column_name].value_counts(normalize=True).to_dict()
+                b_dist = batch[column_name].value_counts(normalize=True).to_dict()
+                return f"Column '{column_name}': historical distribution={h_dist}, batch distribution={b_dist}"
+
+        # ── FLAG_ROWS ──
+        elif action.action_type == ActionType.FLAG_ROWS:
+            row_indices = action.row_indices
+            if not row_indices:
+                raise ValueError("row_indices is required")
+            if "flagged_indices" not in self.grading_criteria:
+                self.grading_criteria["flagged_indices"] = []
+            self.grading_criteria["flagged_indices"].extend(row_indices)
+            self.grading_criteria["flagged_indices"] = list(set(self.grading_criteria["flagged_indices"]))
+            total = len(self.grading_criteria["flagged_indices"])
+            return f"Flagged {len(row_indices)} rows as suspicious. Total flagged: {total}"
+
+        # ── LABEL_BATCH ──
+        elif action.action_type == ActionType.LABEL_BATCH:
+            drift_label = action.drift_label
+            if not drift_label:
+                raise ValueError("drift_label is required (normal or drift)")
+            if self.current_batch_index == 0:
+                return "No batch to label. Use advance_stream first."
+            label_index = self.current_batch_index - 1
+            self.batch_predictions.append(drift_label)
+            # Store in grading_criteria so grader can access
+            self.grading_criteria["batch_predictions"] = list(self.batch_predictions)
+            if label_index < len(self.batch_labels_ground_truth):
+                is_correct = (drift_label == "drift") == self.batch_labels_ground_truth[label_index]
+                return f"Batch {self.current_batch_index} labeled as '{drift_label}'. {'Correct!' if is_correct else 'Incorrect.'}"
+            return f"Batch {self.current_batch_index} labeled as '{drift_label}'."
 
         else:
             raise ValueError(f"Unknown action type: {action.action_type}")

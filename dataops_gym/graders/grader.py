@@ -232,6 +232,60 @@ def grade_by_criteria(task_id: str, final_df: pd.DataFrame, criteria: dict) -> f
             removal_score = 1.0 - (remaining_old / max(len(original_cols), 1))
             scores.append(("old_columns_removed", removal_score, 0.15))
 
+        elif task_id == "poisoning_detection":
+            flagged = set(criteria.get("flagged_indices", []))
+            poisoned = set(criteria.get("poisoned_indices", []))
+
+            if not flagged:
+                # Check if poisoned rows were removed from the dataframe
+                original_count = criteria.get("original_row_count", 0)
+                if len(final_df) < original_count:
+                    removed_count = original_count - len(final_df)
+                    return round(min(removed_count / max(len(poisoned), 1), 1.0) * 0.5, 4)
+                return 0.0
+
+            tp = len(flagged & poisoned)
+            fp = len(flagged - poisoned)
+            fn = len(poisoned - flagged)
+
+            precision = tp / max(tp + fp, 1)
+            recall = tp / max(tp + fn, 1)
+            f1 = 2 * precision * recall / max(precision + recall, 0.001)
+
+            clean_damage = fp / max(len(criteria.get("clean_indices", [])), 1)
+
+            score = f1 * 0.7 + (1.0 - clean_damage) * 0.3
+            return round(max(0.0, min(1.0, score)), 4)
+
+        elif task_id == "drift_detection":
+            predictions = criteria.get("batch_predictions", [])
+            ground_truth = criteria.get("batch_labels", [])
+
+            if not predictions:
+                return 0.0
+
+            tp = fp = fn = tn = 0
+            for pred, actual in zip(predictions, ground_truth[:len(predictions)]):
+                is_drift_pred = pred == "drift"
+                is_drift_actual = actual
+                if is_drift_pred and is_drift_actual:
+                    tp += 1
+                elif is_drift_pred and not is_drift_actual:
+                    fp += 1
+                elif not is_drift_pred and is_drift_actual:
+                    fn += 1
+                else:
+                    tn += 1
+
+            precision = tp / max(tp + fp, 1)
+            recall = tp / max(tp + fn, 1)
+            f1 = 2 * precision * recall / max(precision + recall, 0.001)
+
+            coverage = len(predictions) / max(len(ground_truth), 1)
+
+            score = f1 * 0.7 + coverage * 0.3
+            return round(max(0.0, min(1.0, score)), 4)
+
         elif task_id == "custom":
             # Grade based on whether detected issues were fixed
             issues = criteria.get("detected_issues", {})
