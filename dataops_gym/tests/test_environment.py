@@ -310,3 +310,79 @@ def test_upload_creates_valid_task():
     assert grader_resp.status_code == 200
     grader_data = grader_resp.json()
     assert 0.0 <= grader_data["score"] <= 1.0
+
+
+# ── Phase 1: Outlier Detection + Schema Migration ───────────────────────────
+
+def test_reset_outlier_detection():
+    env = DataOpsEnvironment()
+    obs = env.reset("outlier_detection", seed=42)
+    assert obs.total_rows >= 100
+    col_names = [c.name for c in obs.column_summaries]
+    assert "age" in col_names
+    assert "salary" in col_names
+    assert "department" in col_names
+
+
+def test_reset_schema_migration():
+    env = DataOpsEnvironment()
+    obs = env.reset("schema_migration", seed=42)
+    col_names = [c.name for c in obs.column_summaries]
+    assert "full_name" in col_names
+    assert "full_address" in col_names
+    assert "status_code" in col_names
+
+
+def test_clip_outliers_action():
+    env = DataOpsEnvironment()
+    env.reset("outlier_detection", seed=42)
+    obs = env.step(DataOpsAction(action_type="clip_outliers", column_name="age", clip_min=18, clip_max=80))
+    assert obs.error is None
+    assert "Clipped" in obs.last_action_result
+
+
+def test_detect_outliers_action():
+    env = DataOpsEnvironment()
+    env.reset("outlier_detection", seed=42)
+    obs = env.step(DataOpsAction(action_type="detect_outliers", column_name="salary", outlier_method="iqr"))
+    assert obs.error is None
+    assert "Found" in obs.last_action_result or "outlier" in obs.last_action_result.lower()
+
+
+def test_split_column_action():
+    env = DataOpsEnvironment()
+    env.reset("schema_migration", seed=42)
+    obs = env.step(DataOpsAction(
+        action_type="split_column", column_name="full_name",
+        delimiter=" ", new_columns=["first_name", "last_name"], max_splits=1
+    ))
+    assert obs.error is None
+    col_names = [c.name for c in obs.column_summaries]
+    assert "first_name" in col_names
+    assert "last_name" in col_names
+    assert "full_name" not in col_names
+
+
+def test_map_values_action():
+    env = DataOpsEnvironment()
+    env.reset("schema_migration", seed=42)
+    obs = env.step(DataOpsAction(
+        action_type="map_values", column_name="status_code",
+        value_mapping={"1": "active", "2": "inactive", "3": "pending", "4": "archived"}
+    ))
+    assert obs.error is None
+    assert "Mapped" in obs.last_action_result
+
+
+def test_outlier_grader():
+    env = DataOpsEnvironment()
+    env.reset("outlier_detection", seed=42)
+    score = grade_by_criteria("outlier_detection", env.dataframes["main"], env.grading_criteria)
+    assert 0.0 <= score <= 1.0
+
+
+def test_schema_migration_grader():
+    env = DataOpsEnvironment()
+    env.reset("schema_migration", seed=42)
+    score = grade_by_criteria("schema_migration", env.dataframes["main"], env.grading_criteria)
+    assert 0.0 <= score <= 1.0

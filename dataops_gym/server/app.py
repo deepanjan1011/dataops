@@ -53,6 +53,9 @@ class ResetRequest(BaseModel):
     null_percentage: Optional[float] = None   # 0.0–0.5
     duplicate_rate: Optional[float] = None    # 0.0–0.3
     pii_density: Optional[float] = None       # 0.0–1.0 (hard task only)
+    outlier_rate: Optional[float] = None      # 0.0–0.3 (outlier_detection)
+    legitimate_extreme_rate: Optional[float] = None  # 0.0–0.1 (outlier_detection)
+    migration_complexity: Optional[float] = None     # 0.0–1.0 (schema_migration)
 
 
 # ─── HELPERS ─────────────────────────────────────────────────────────────────
@@ -168,6 +171,37 @@ def tasks():
                 "seed": {"default": None, "description": "Set for reproducibility"},
             },
         },
+        {
+            "task_id": "outlier_detection",
+            "description": (
+                "Detect and handle outliers in an employee dataset. Distinguish genuine errors "
+                "from legitimate extreme values using context (e.g., executive salaries)."
+            ),
+            "difficulty": "medium-hard",
+            "max_steps": 30,
+            "action_schema": action_schema,
+            "configurable_params": {
+                "num_rows": {"default": 100, "min": 20, "max": 1000, "description": "Number of employee rows"},
+                "outlier_rate": {"default": 0.08, "min": 0.0, "max": 0.3, "description": "Fraction of rows with planted outliers"},
+                "legitimate_extreme_rate": {"default": 0.03, "min": 0.0, "max": 0.1, "description": "Fraction of rows with legitimate extremes"},
+                "seed": {"default": None, "description": "Set for reproducibility"},
+            },
+        },
+        {
+            "task_id": "schema_migration",
+            "description": (
+                "Restructure a dataset: split combined columns (name, address, datetime), "
+                "standardize phone numbers, separate price/currency, map status codes to strings."
+            ),
+            "difficulty": "hard",
+            "max_steps": 30,
+            "action_schema": action_schema,
+            "configurable_params": {
+                "num_rows": {"default": 60, "min": 10, "max": 500, "description": "Number of rows"},
+                "migration_complexity": {"default": 0.5, "min": 0.0, "max": 1.0, "description": "Complexity of schema migration"},
+                "seed": {"default": None, "description": "Set for reproducibility"},
+            },
+        },
     ]
     return {"tasks": task_list}
 
@@ -186,6 +220,12 @@ def reset(request: ResetRequest):
             kwargs["duplicate_rate"] = request.duplicate_rate
         if request.pii_density is not None:
             kwargs["pii_density"] = request.pii_density
+        if request.outlier_rate is not None:
+            kwargs["outlier_rate"] = request.outlier_rate
+        if request.legitimate_extreme_rate is not None:
+            kwargs["legitimate_extreme_rate"] = request.legitimate_extreme_rate
+        if request.migration_complexity is not None:
+            kwargs["migration_complexity"] = request.migration_complexity
 
         obs = env.reset(
             request.task_id,

@@ -8,7 +8,7 @@ import random
 import pandas as pd
 import numpy as np
 from faker import Faker
-from typing import Optional, Tuple, Dict
+from typing import Optional, Tuple, Dict, List
 
 
 def generate_easy_dataset(
@@ -359,5 +359,148 @@ def generate_hard_dataset(
             "pii_density": pii_density,
             "pii_variety": pii_variety,
         },
+    }
+    return df, criteria
+
+
+def generate_outlier_dataset(
+    seed: Optional[int] = None,
+    num_rows: int = 100,
+    outlier_rate: float = 0.08,
+    legitimate_extreme_rate: float = 0.03,
+) -> Tuple[pd.DataFrame, dict]:
+    """
+    Generate an employee dataset with planted outliers and legitimate extremes.
+
+    The key challenge: Executive department employees CAN have salaries of 500K-2M.
+    These are NOT outliers. The agent must learn to use context (department) to decide.
+    """
+    if seed is not None:
+        np.random.seed(seed)
+        random.seed(seed)
+        fake = Faker()
+        Faker.seed(seed)
+    else:
+        fake = Faker()
+
+    departments = ["Engineering", "Sales", "Marketing", "HR", "Finance", "Executive"]
+    dept_weights = [0.30, 0.20, 0.15, 0.10, 0.15, 0.10]
+
+    data = {
+        "employee_id": list(range(1, num_rows + 1)),
+        "name": [fake.name() for _ in range(num_rows)],
+        "age": [random.randint(22, 65) for _ in range(num_rows)],
+        "salary": [round(random.uniform(30000, 150000), 2) for _ in range(num_rows)],
+        "department": random.choices(departments, weights=dept_weights, k=num_rows),
+        "years_experience": [random.randint(0, 40) for _ in range(num_rows)],
+        "performance_score": [round(random.uniform(1.0, 5.0), 1) for _ in range(num_rows)],
+        "monthly_hours": [random.randint(140, 200) for _ in range(num_rows)],
+    }
+    df = pd.DataFrame(data)
+
+    # Plant outliers
+    outlier_indices = {}
+    n_outliers = max(1, int(num_rows * outlier_rate))
+    outlier_rows = np.random.choice(num_rows, size=n_outliers, replace=False)
+
+    outlier_values = {
+        "age": [-5, 0, 150, 200, -10, 999],
+        "salary": [-1000, 0, 99999999, -500, 0.01],
+        "years_experience": [-3, 99, 150, -10, 200],
+        "performance_score": [-1, 0, 11, 100, -5, 50],
+        "monthly_hours": [-10, 0, 999, 5000, -50, 10000],
+    }
+
+    numeric_cols = list(outlier_values.keys())
+    for idx in outlier_rows:
+        col = random.choice(numeric_cols)
+        val = random.choice(outlier_values[col])
+        df.at[idx, col] = val
+        outlier_indices[int(idx)] = {col: val}
+
+    # Plant legitimate extremes (Executive salaries)
+    legitimate_extreme_indices = {}
+    n_legit = max(1, int(num_rows * legitimate_extreme_rate))
+    exec_rows = df[df["department"] == "Executive"].index.tolist()
+    if not exec_rows:
+        # Force some executives
+        random_rows = np.random.choice(num_rows, size=min(n_legit, 3), replace=False)
+        for idx in random_rows:
+            df.at[idx, "department"] = "Executive"
+        exec_rows = list(random_rows)
+
+    for idx in exec_rows[:n_legit]:
+        high_salary = round(random.uniform(500000, 2000000), 2)
+        df.at[idx, "salary"] = high_salary
+        legitimate_extreme_indices[int(idx)] = {"salary": high_salary}
+
+    criteria = {
+        "outlier_indices": outlier_indices,
+        "legitimate_extreme_indices": legitimate_extreme_indices,
+        "expected_columns": ["employee_id", "name", "age", "salary", "department",
+                           "years_experience", "performance_score", "monthly_hours"],
+        "valid_ranges": {
+            "age": {"min": 18, "max": 80},
+            "salary": {"min": 20000, "max": 200000, "executive_max": 3000000},
+            "years_experience": {"min": 0, "max": 50},
+            "performance_score": {"min": 1.0, "max": 5.0},
+            "monthly_hours": {"min": 80, "max": 250},
+        },
+        "original_row_count": num_rows,
+    }
+
+    return df, criteria
+
+
+def generate_schema_migration_dataset(
+    seed: Optional[int] = None,
+    num_rows: int = 60,
+    migration_complexity: float = 0.5,
+) -> Tuple[pd.DataFrame, dict]:
+    """
+    Generate a dataset that needs schema restructuring.
+
+    Source columns need splitting, standardizing, and mapping to a target schema.
+    """
+    if seed is not None:
+        np.random.seed(seed)
+        random.seed(seed)
+        fake = Faker()
+        Faker.seed(seed)
+    else:
+        fake = Faker()
+
+    currencies = [("$", "USD"), ("E", "EUR"), ("P", "GBP")]
+    statuses = {1: "active", 2: "inactive", 3: "pending", 4: "archived"}
+    tag_options = ["python", "ml", "data", "ai", "nlp", "cv", "rl", "devops", "cloud", "sql"]
+
+    data = {
+        "full_name": [fake.name() for _ in range(num_rows)],
+        "full_address": [f"{fake.street_address()}, {fake.city()}, {fake.state_abbr()} {fake.zipcode()}"
+                        for _ in range(num_rows)],
+        "phone_raw": [f"({random.randint(200,999)}) {random.randint(100,999)}-{random.randint(1000,9999)}"
+                     for _ in range(num_rows)],
+        "price_with_currency": [f"{random.choice(currencies)[0]}{round(random.uniform(5, 500), 2)}"
+                               for _ in range(num_rows)],
+        "datetime_combined": [fake.date_time_between(start_date="-2y", end_date="now").strftime("%Y-%m-%d %H:%M:%S")
+                            for _ in range(num_rows)],
+        "tags_string": [",".join(random.sample(tag_options, random.randint(1, 4)))
+                       for _ in range(num_rows)],
+        "status_code": [random.choice(list(statuses.keys())) for _ in range(num_rows)],
+    }
+    df = pd.DataFrame(data)
+
+    criteria = {
+        "target_schema": {
+            "first_name": "str", "last_name": "str",
+            "street": "str", "city": "str", "state": "str", "zip_code": "str",
+            "phone": "str", "price": "float", "currency": "str",
+            "date": "str", "time": "str",
+            "tags_string": "str", "status": "str",
+        },
+        "status_mapping": {str(k): v for k, v in statuses.items()},
+        "currency_mapping": {"$": "USD", "E": "EUR", "P": "GBP"},
+        "original_columns": list(data.keys()),
+        "original_row_count": num_rows,
     }
     return df, criteria

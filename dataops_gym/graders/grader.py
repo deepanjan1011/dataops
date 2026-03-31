@@ -141,6 +141,97 @@ def grade_by_criteria(task_id: str, final_df: pd.DataFrame, criteria: dict) -> f
             preservation = min(avg_len / 100, 1.0)
             scores.append(("text_preservation", float(preservation), 0.30))
 
+        elif task_id == "outlier_detection":
+            scores = []
+            # 1. Outlier removal (0.35): Check if planted outlier values are gone
+            outlier_indices = criteria.get("outlier_indices", {})
+            removed = 0
+            for idx_str, cols in outlier_indices.items():
+                idx = int(idx_str)
+                for col, val in cols.items():
+                    if idx >= len(final_df) or col not in final_df.columns:
+                        removed += 1
+                    elif final_df.at[idx, col] != val:
+                        removed += 1
+            outlier_total = sum(len(v) for v in outlier_indices.values())
+            removal_score = removed / max(outlier_total, 1)
+            scores.append(("outlier_removal", removal_score, 0.35))
+
+            # 2. Legitimate preservation (0.35): Legitimate extremes still present
+            legit_indices = criteria.get("legitimate_extreme_indices", {})
+            preserved = 0
+            legit_total = sum(len(v) for v in legit_indices.values())
+            for idx_str, cols in legit_indices.items():
+                idx = int(idx_str)
+                for col, val in cols.items():
+                    if idx < len(final_df) and col in final_df.columns:
+                        try:
+                            if abs(float(final_df.at[idx, col]) - float(val)) < 1.0:
+                                preserved += 1
+                        except (ValueError, TypeError):
+                            pass
+            preservation_score = preserved / max(legit_total, 1)
+            scores.append(("legitimate_preservation", preservation_score, 0.35))
+
+            # 3. Row retention (0.15)
+            original = criteria.get("original_row_count", len(final_df))
+            retention = min(len(final_df) / max(original, 1), 1.0)
+            scores.append(("row_retention", retention, 0.15))
+
+            # 4. Data integrity (0.15): No new nulls, types correct
+            null_ratio = final_df.isnull().sum().sum() / max(final_df.size, 1)
+            integrity = 1.0 - null_ratio
+            scores.append(("data_integrity", integrity, 0.15))
+
+        elif task_id == "schema_migration":
+            scores = []
+            target = criteria.get("target_schema", {})
+            original_cols = criteria.get("original_columns", [])
+
+            # 1. Schema match (0.40): Output columns match target
+            target_cols = set(target.keys())
+            actual_cols = set(final_df.columns)
+            matching = len(target_cols & actual_cols)
+            schema_score = matching / max(len(target_cols), 1)
+            scores.append(("schema_match", schema_score, 0.40))
+
+            # 2. Value correctness (0.30): Spot checks
+            value_score = 0.0
+            checks = 0
+            if "price" in final_df.columns:
+                try:
+                    pd.to_numeric(final_df["price"], errors="raise")
+                    value_score += 1.0
+                except (ValueError, TypeError):
+                    pass
+                checks += 1
+            if "status" in final_df.columns:
+                valid_statuses = set(criteria.get("status_mapping", {}).values())
+                if valid_statuses:
+                    actual = set(final_df["status"].dropna().unique())
+                    if actual.issubset(valid_statuses):
+                        value_score += 1.0
+                checks += 1
+            if "phone" in final_df.columns:
+                sample = final_df["phone"].dropna().head(10)
+                if len(sample) > 0:
+                    digits_only = sample.str.match(r'^\d+$').sum()
+                    value_score += digits_only / len(sample)
+                checks += 1
+            if checks > 0:
+                value_score /= checks
+            scores.append(("value_correctness", value_score, 0.30))
+
+            # 3. Row preservation (0.15)
+            original = criteria.get("original_row_count", len(final_df))
+            retention = min(len(final_df) / max(original, 1), 1.0)
+            scores.append(("row_retention", retention, 0.15))
+
+            # 4. Old columns removed (0.15)
+            remaining_old = len(set(original_cols) & actual_cols)
+            removal_score = 1.0 - (remaining_old / max(len(original_cols), 1))
+            scores.append(("old_columns_removed", removal_score, 0.15))
+
         elif task_id == "custom":
             # Grade based on whether detected issues were fixed
             issues = criteria.get("detected_issues", {})

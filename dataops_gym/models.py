@@ -19,6 +19,10 @@ class ActionType(str, Enum):
     FILL_VALUE = "fill_value"
     SUBMIT = "submit"  # Agent declares it's done
     UNDO = "undo"      # Revert last action
+    CLIP_OUTLIERS = "clip_outliers"
+    DETECT_OUTLIERS = "detect_outliers"
+    SPLIT_COLUMN = "split_column"
+    MAP_VALUES = "map_values"
 
 
 class DataOpsAction(BaseModel):
@@ -58,6 +62,19 @@ class DataOpsAction(BaseModel):
 
     # For fill_value
     fill_value: Optional[str] = Field(None, description="Value to fill missing entries with")
+
+    # For clip_outliers / detect_outliers
+    clip_min: Optional[float] = Field(None, description="Minimum allowed value for clipping")
+    clip_max: Optional[float] = Field(None, description="Maximum allowed value for clipping")
+    outlier_method: Optional[Literal["iqr", "zscore", "range"]] = Field(None, description="Outlier detection method")
+
+    # For split_column
+    delimiter: Optional[str] = Field(None, description="Delimiter for splitting columns")
+    new_columns: Optional[List[str]] = Field(None, description="New column names after split")
+    max_splits: Optional[int] = Field(None, description="Maximum number of splits")
+
+    # For map_values
+    value_mapping: Optional[Dict[str, str]] = Field(None, description="Value mapping dict")
 
 
 # ─── OBSERVATION ───

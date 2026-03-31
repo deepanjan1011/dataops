@@ -25,6 +25,8 @@ try:
         generate_easy_dataset,
         generate_medium_dataset,
         generate_hard_dataset,
+        generate_outlier_dataset,
+        generate_schema_migration_dataset,
     )
     _GENERATORS_AVAILABLE = True
 except ImportError:
@@ -45,7 +47,21 @@ TASK_DESCRIPTIONS = {
         "Redact all PII (emails, phone numbers, credit card numbers, SSNs) from "
         "web-scraped text documents using regex, while preserving all non-PII content."
     ),
+    "outlier_detection": (
+        "Detect and handle outliers in an employee dataset. Some values are genuine errors "
+        "(negative ages, impossible salaries) while others are legitimate extremes "
+        "(executive salaries of $500K-$2M). Use context like department to distinguish "
+        "real outliers from valid data points."
+    ),
+    "schema_migration": (
+        "Restructure a dataset by splitting combined columns (full_name -> first_name + last_name, "
+        "full_address -> street + city + state + zip), standardizing phone numbers to digits only, "
+        "separating price and currency, splitting datetime into date + time, "
+        "and mapping status codes to descriptive strings."
+    ),
 }
+
+VALID_TASK_IDS = set(TASK_DESCRIPTIONS.keys())
 
 
 def _to_python(val: Any) -> Any:
@@ -107,7 +123,7 @@ class DataOpsEnvironment:
         - seed=42    → deterministic, same data every time (for baseline reproducibility)
         Falls back to static CSV files if generators are unavailable.
         """
-        if task_id not in ("easy", "medium", "hard"):
+        if task_id not in VALID_TASK_IDS:
             task_id = "easy"
 
         self.current_task = task_id
@@ -257,6 +273,22 @@ class DataOpsEnvironment:
             if "pii_variety" in kwargs:
                 gen_kwargs["pii_variety"] = kwargs["pii_variety"]
             dirty_df, self.grading_criteria = generate_hard_dataset(**gen_kwargs)
+            self.dataframes = {"main": dirty_df}
+
+        elif task_id == "outlier_detection":
+            gen_kwargs = {"seed": seed, "num_rows": kwargs.get("num_rows", num_rows) if num_rows != 50 else 100}
+            if "outlier_rate" in kwargs:
+                gen_kwargs["outlier_rate"] = kwargs["outlier_rate"]
+            if "legitimate_extreme_rate" in kwargs:
+                gen_kwargs["legitimate_extreme_rate"] = kwargs["legitimate_extreme_rate"]
+            dirty_df, self.grading_criteria = generate_outlier_dataset(**gen_kwargs)
+            self.dataframes = {"main": dirty_df}
+
+        elif task_id == "schema_migration":
+            gen_kwargs = {"seed": seed, "num_rows": num_rows if num_rows != 50 else 60}
+            if "migration_complexity" in kwargs:
+                gen_kwargs["migration_complexity"] = kwargs["migration_complexity"]
+            dirty_df, self.grading_criteria = generate_schema_migration_dataset(**gen_kwargs)
             self.dataframes = {"main": dirty_df}
 
     def _load_datasets(self, task_id: str) -> None:
@@ -505,6 +537,89 @@ class DataOpsEnvironment:
             filled = before_nulls - df[column_name].isna().sum()
             self.dataframes["main"] = df
             return f"Filled {filled} null values in '{column_name}' with '{fill_value}'"
+
+        # ── CLIP_OUTLIERS ──
+        elif action.action_type == ActionType.CLIP_OUTLIERS:
+            column_name = action.column_name
+            clip_min = action.clip_min
+            clip_max = action.clip_max
+            if column_name is None:
+                raise ValueError("column_name is required for clip_outliers")
+            if column_name not in df.columns:
+                raise ValueError(f"Column '{column_name}' not found")
+            if clip_min is None or clip_max is None:
+                raise ValueError("clip_min and clip_max are required for clip_outliers")
+            df[column_name] = pd.to_numeric(df[column_name], errors='coerce')
+            before = int(((df[column_name] < clip_min) | (df[column_name] > clip_max)).sum())
+            df[column_name] = df[column_name].clip(lower=clip_min, upper=clip_max)
+            self.dataframes["main"] = df
+            return f"Clipped {column_name}: {before} values adjusted to [{clip_min}, {clip_max}]"
+
+        # ── DETECT_OUTLIERS ──
+        elif action.action_type == ActionType.DETECT_OUTLIERS:
+            column_name = action.column_name
+            outlier_method = action.outlier_method
+            if column_name is None:
+                raise ValueError("column_name is required for detect_outliers")
+            if column_name not in df.columns:
+                raise ValueError(f"Column '{column_name}' not found")
+            col = pd.to_numeric(df[column_name], errors='coerce')
+            if outlier_method == "iqr":
+                Q1, Q3 = col.quantile([0.25, 0.75])
+                IQR = Q3 - Q1
+                mask = (col < Q1 - 1.5 * IQR) | (col > Q3 + 1.5 * IQR)
+            elif outlier_method == "zscore":
+                z = (col - col.mean()) / max(col.std(), 0.001)
+                mask = abs(z) > 3
+            elif outlier_method == "range":
+                clip_min = action.clip_min
+                clip_max = action.clip_max
+                if clip_min is None or clip_max is None:
+                    raise ValueError("clip_min and clip_max are required for range-based detection")
+                mask = (col < clip_min) | (col > clip_max)
+            else:
+                raise ValueError("Unknown method. Use iqr, zscore, or range")
+            outlier_count = int(mask.sum())
+            indices = df[mask].index.tolist()[:20]
+            return f"Found {outlier_count} outliers in {column_name} using {outlier_method}. Indices: {indices}"
+
+        # ── SPLIT_COLUMN ──
+        elif action.action_type == ActionType.SPLIT_COLUMN:
+            column_name = action.column_name
+            delimiter = action.delimiter
+            new_columns = action.new_columns
+            max_splits = action.max_splits
+            if column_name is None:
+                raise ValueError("column_name is required for split_column")
+            if column_name not in df.columns:
+                raise ValueError(f"Column '{column_name}' not found")
+            if not delimiter or not new_columns:
+                raise ValueError("delimiter and new_columns are required for split_column")
+            splits = df[column_name].astype(str).str.split(delimiter, n=max_splits or len(new_columns) - 1, expand=True)
+            for i, col_name in enumerate(new_columns):
+                if i < splits.shape[1]:
+                    df[col_name] = splits[i].str.strip()
+                else:
+                    df[col_name] = None
+            df.drop(columns=[column_name], inplace=True)
+            self.dataframes["main"] = df
+            return f"Split {column_name} into {new_columns}"
+
+        # ── MAP_VALUES ──
+        elif action.action_type == ActionType.MAP_VALUES:
+            column_name = action.column_name
+            value_mapping = action.value_mapping
+            if column_name is None:
+                raise ValueError("column_name is required for map_values")
+            if column_name not in df.columns:
+                raise ValueError(f"Column '{column_name}' not found")
+            if not value_mapping:
+                raise ValueError("value_mapping is required")
+            original_values = df[column_name].astype(str)
+            df[column_name] = original_values.map(value_mapping).fillna(original_values)
+            self.dataframes["main"] = df
+            mapped_count = int((df[column_name] != original_values).sum())
+            return f"Mapped {mapped_count} values in {column_name}"
 
         else:
             raise ValueError(f"Unknown action type: {action.action_type}")
