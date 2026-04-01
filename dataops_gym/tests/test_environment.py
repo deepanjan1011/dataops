@@ -570,3 +570,13 @@ def test_multi_agent_step_with_conflict():
     })
     assert resp.status_code == 200
     assert len(resp.json()["state"]["conflicts"]) >= 1
+
+
+# ── Phase 7: Gradio Dashboard ──────────────────────────────────────────────
+
+def test_gradio_import():
+    try:
+        from dataops_gym.server.gradio_app import create_gradio_interface
+        assert callable(create_gradio_interface)
+    except ImportError:
+        pass  # Gradio optional

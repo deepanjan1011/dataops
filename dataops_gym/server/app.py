@@ -766,3 +766,15 @@ def baseline():
     except Exception as e:
         logger.exception("Error in /baseline")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ─── GRADIO DASHBOARD ─────────────────────────────────────────────────────
+
+try:
+    import gradio as gr
+    from dataops_gym.server.gradio_app import create_gradio_interface
+    demo = create_gradio_interface(env)
+    app = gr.mount_gradio_app(app, demo, path="/")
+except ImportError:
+    # Gradio not installed — API-only mode
+    pass
