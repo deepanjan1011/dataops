@@ -16,9 +16,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+import numpy as np
+
 from dataops_gym.models import (
     DataOpsAction, DataOpsObservation, DataOpsState,
     CurriculumRequest, CurriculumState,
+    AdversarialStartRequest, AdversarialStepRequest, AdversarialState,
 )
 from dataops_gym.server.dataops_environment import DataOpsEnvironment
 from dataops_gym.graders.grader import grade, grade_by_criteria
@@ -498,6 +501,165 @@ def curriculum(request: CurriculumRequest):
     except Exception as e:
         logger.exception("Error in /curriculum")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ─── ADVERSARIAL MODE ──────────────────────────────────────────────────────
+
+adversarial_state = None
+adversarial_clean_snapshot = None
+adversarial_corrupted_snapshot = None
+
+
+def execute_corruption(action: DataOpsAction, df: pd.DataFrame) -> str:
+    """Execute a corruptor action on the dataframe."""
+    if action.action_type == "inject_nulls":
+        count = min(action.inject_count or 5, len(df))
+        indices = np.random.choice(len(df), size=count, replace=False)
+        if action.column_name and action.column_name in df.columns:
+            df.loc[indices, action.column_name] = None
+        return f"Injected {count} nulls in {action.column_name}"
+
+    elif action.action_type == "introduce_typos":
+        if action.column_name and action.column_name in df.columns:
+            rate = action.typo_rate or 0.1
+            mask = np.random.random(len(df)) < rate
+            def add_typo(s):
+                if not isinstance(s, str) or len(s) < 2:
+                    return s
+                pos = random.randint(0, len(s) - 1)
+                return s[:pos] + random.choice('abcdefghijklmnop') + s[pos + 1:]
+            df.loc[mask, action.column_name] = df.loc[mask, action.column_name].apply(add_typo)
+        return f"Introduced typos in {action.column_name}"
+
+    elif action.action_type == "swap_values":
+        if action.column_name and action.column_name in df.columns:
+            count = min(action.inject_count or 5, len(df) // 2)
+            for _ in range(count):
+                i, j = random.sample(range(len(df)), 2)
+                df.at[i, action.column_name], df.at[j, action.column_name] = \
+                    df.at[j, action.column_name], df.at[i, action.column_name]
+        return f"Swapped {count} pairs in {action.column_name}"
+
+    elif action.action_type == "flip_labels":
+        if action.column_name and action.column_name in df.columns:
+            count = min(action.inject_count or 5, len(df))
+            indices = np.random.choice(len(df), size=count, replace=False)
+            unique_vals = df[action.column_name].dropna().unique().tolist()
+            if len(unique_vals) > 1:
+                for idx in indices:
+                    current = df.at[idx, action.column_name]
+                    others = [v for v in unique_vals if v != current]
+                    if others:
+                        df.at[idx, action.column_name] = random.choice(others)
+        return f"Flipped {count} labels in {action.column_name}"
+
+    elif action.action_type == "inject_pii":
+        if action.column_name and action.column_name in df.columns:
+            count = min(action.inject_count or 3, len(df))
+            indices = np.random.choice(len(df), size=count, replace=False)
+            pii_templates = [
+                "contact john@example.com",
+                "call (555) 123-4567",
+                "card 4532-1234-5678-9012",
+            ]
+            for idx in indices:
+                current = str(df.at[idx, action.column_name])
+                df.at[idx, action.column_name] = current + " " + random.choice(pii_templates)
+        return f"Injected PII into {count} rows of {action.column_name}"
+
+    return "Unknown corruption action"
+
+
+def compare_dataframes(df1: pd.DataFrame, df2: pd.DataFrame) -> float:
+    """Compare two dataframes and return a similarity score 0.0-1.0."""
+    if df1.shape != df2.shape:
+        row_ratio = min(len(df1), len(df2)) / max(len(df1), len(df2)) if max(len(df1), len(df2)) > 0 else 0.0
+        col_ratio = min(len(df1.columns), len(df2.columns)) / max(len(df1.columns), len(df2.columns)) if max(len(df1.columns), len(df2.columns)) > 0 else 0.0
+        shape_penalty = (row_ratio + col_ratio) / 2
+    else:
+        shape_penalty = 1.0
+
+    # Compare on shared columns and min rows
+    shared_cols = list(set(df1.columns) & set(df2.columns))
+    if not shared_cols:
+        return 0.0
+    min_rows = min(len(df1), len(df2))
+    if min_rows == 0:
+        return 0.0
+
+    matches = 0
+    total = 0
+    for col in shared_cols:
+        for i in range(min_rows):
+            total += 1
+            v1 = df1[col].iloc[i]
+            v2 = df2[col].iloc[i]
+            if pd.isna(v1) and pd.isna(v2):
+                matches += 1
+            elif str(v1) == str(v2):
+                matches += 1
+
+    cell_match = matches / total if total > 0 else 0.0
+    return round(cell_match * shape_penalty, 4)
+
+
+@app.post("/adversarial/start")
+def adversarial_start(request: AdversarialStartRequest):
+    global adversarial_state, adversarial_clean_snapshot
+    from dataops_gym.tasks.generators import generate_easy_dataset
+
+    dirty_df, _ = generate_easy_dataset(
+        seed=request.seed, num_rows=request.num_rows,
+        null_percentage=0.0, duplicate_rate=0.0,
+    )
+
+    env.dataframes = {"main": dirty_df}
+    env.current_task = "adversarial"
+    env.step_count = 0
+    env.done = False
+    env.episode_id = str(uuid.uuid4())
+    env.cumulative_reward = 0.0
+
+    adversarial_clean_snapshot = dirty_df.copy()
+    adversarial_state = AdversarialState()
+
+    return _safe_json({"state": adversarial_state.model_dump(), "observation": env._build_observation().model_dump()})
+
+
+@app.post("/adversarial/step")
+def adversarial_step(request: AdversarialStepRequest):
+    global adversarial_state, adversarial_corrupted_snapshot
+
+    if adversarial_state is None:
+        return _safe_json({"error": "Start adversarial mode first with POST /adversarial/start"})
+
+    if adversarial_state.phase == "done":
+        return _safe_json({"error": "Adversarial episode is done. Start a new one."})
+
+    if request.role == "corruptor" and adversarial_state.phase == "corrupt":
+        execute_corruption(request.action, env.dataframes["main"])
+        adversarial_state.round_number += 1
+        adversarial_state.corruptions_planted += 1
+
+        if adversarial_state.round_number >= adversarial_state.max_rounds_per_phase:
+            adversarial_state.phase = "clean"
+            adversarial_state.round_number = 0
+            adversarial_corrupted_snapshot = env.dataframes["main"].copy()
+
+    elif request.role == "cleaner" and adversarial_state.phase == "clean":
+        env.step(request.action)
+        adversarial_state.round_number += 1
+
+        if adversarial_state.round_number >= adversarial_state.max_rounds_per_phase:
+            adversarial_state.phase = "done"
+            clean_match = compare_dataframes(env.dataframes["main"], adversarial_clean_snapshot)
+            adversarial_state.cleaner_score = clean_match
+            adversarial_state.corruptor_score = round(1.0 - clean_match, 4)
+
+    else:
+        return _safe_json({"error": f"Wrong role for current phase. Phase: {adversarial_state.phase}"})
+
+    return _safe_json({"state": adversarial_state.model_dump(), "observation": env._build_observation().model_dump()})
 
 
 # ─── BASELINE ───────────────────────────────────────────────────────────────

@@ -490,3 +490,38 @@ def test_curriculum_status():
     client.post("/curriculum", json={"action": "start"})
     resp = client.post("/curriculum", json={"action": "status"})
     assert resp.status_code == 200
+
+
+# ── Phase 5: Adversarial Mode ──────────────────────────────────────────────
+
+def test_adversarial_start():
+    from fastapi.testclient import TestClient
+    from dataops_gym.server.app import app
+    client = TestClient(app)
+    resp = client.post("/adversarial/start", json={"num_rows": 30, "seed": 42})
+    assert resp.status_code == 200
+    assert resp.json()["state"]["phase"] == "corrupt"
+
+
+def test_adversarial_corrupt_then_clean():
+    from fastapi.testclient import TestClient
+    from dataops_gym.server.app import app
+    client = TestClient(app)
+    client.post("/adversarial/start", json={"num_rows": 30, "seed": 42})
+
+    # Corrupt 5 times
+    for _ in range(5):
+        resp = client.post("/adversarial/step", json={
+            "role": "corruptor",
+            "action": {"action_type": "inject_nulls", "column_name": "product_name", "inject_count": 2}
+        })
+    assert resp.json()["state"]["phase"] == "clean"
+
+    # Clean 5 times
+    for _ in range(5):
+        resp = client.post("/adversarial/step", json={
+            "role": "cleaner",
+            "action": {"action_type": "impute_missing", "column_name": "product_name", "strategy": "mode"}
+        })
+    assert resp.json()["state"]["phase"] == "done"
+    assert "cleaner_score" in resp.json()["state"]

@@ -27,6 +27,11 @@ class ActionType(str, Enum):
     ANALYZE_DISTRIBUTION = "analyze_distribution"
     LABEL_BATCH = "label_batch"
     FLAG_ROWS = "flag_rows"
+    INJECT_NULLS = "inject_nulls"
+    SWAP_VALUES = "swap_values"
+    INTRODUCE_TYPOS = "introduce_typos"
+    FLIP_LABELS = "flip_labels"
+    INJECT_PII = "inject_pii"
 
 
 class DataOpsAction(BaseModel):
@@ -86,6 +91,10 @@ class DataOpsAction(BaseModel):
     # For flag_rows (poisoning detection)
     row_indices: Optional[List[int]] = Field(None, description="Row indices to flag as suspicious")
 
+    # For adversarial corruption actions
+    inject_count: Optional[int] = Field(None, description="Number of values to corrupt")
+    typo_rate: Optional[float] = Field(None, description="Fraction of values to add typos to")
+
 
 # ─── OBSERVATION ───
 class ColumnSummary(BaseModel):
@@ -134,6 +143,26 @@ class DataOpsState(BaseModel):
 
 
 # ─── CURRICULUM ───
+class AdversarialStartRequest(BaseModel):
+    num_rows: int = 50
+    seed: Optional[int] = None
+
+
+class AdversarialStepRequest(BaseModel):
+    role: Literal["corruptor", "cleaner"]
+    action: DataOpsAction
+
+
+class AdversarialState(BaseModel):
+    round_number: int = 0
+    max_rounds_per_phase: int = 5
+    corruptor_score: float = 0.0
+    cleaner_score: float = 0.0
+    corruptions_planted: int = 0
+    corruptions_found: int = 0
+    phase: Literal["corrupt", "clean", "done"] = "corrupt"
+
+
 class CurriculumRequest(BaseModel):
     action: Literal["start", "next", "status", "reset"] = "start"
     score_threshold: float = 0.85
