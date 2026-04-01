@@ -6,6 +6,7 @@ Exposes all required OpenEnv endpoints on port 7860.
 import io
 import os
 import logging
+import random
 import uuid
 from typing import Any, Dict, Optional
 
@@ -15,7 +16,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from dataops_gym.models import DataOpsAction, DataOpsObservation, DataOpsState
+from dataops_gym.models import (
+    DataOpsAction, DataOpsObservation, DataOpsState,
+    CurriculumRequest, CurriculumState,
+)
 from dataops_gym.server.dataops_environment import DataOpsEnvironment
 from dataops_gym.graders.grader import grade, grade_by_criteria
 
@@ -415,6 +419,88 @@ async def upload_dataset(file: UploadFile = File(...)):
         "observation": obs.model_dump(),
     })
 
+
+# ─── CURRICULUM LEARNING ────────────────────────────────────────────────────
+
+CURRICULUM_LEVELS = {
+    1:  {"task_id": "easy", "num_rows": 30, "null_percentage": 0.05, "duplicate_rate": 0.05},
+    2:  {"task_id": "easy", "num_rows": 50, "null_percentage": 0.10, "duplicate_rate": 0.10},
+    3:  {"task_id": "easy", "num_rows": 100, "null_percentage": 0.20, "duplicate_rate": 0.15},
+    4:  {"task_id": "medium", "num_rows": 40, "null_percentage": 0.05},
+    5:  {"task_id": "medium", "num_rows": 80, "null_percentage": 0.15},
+    6:  {"task_id": "outlier_detection", "num_rows": 80, "outlier_rate": 0.05},
+    7:  {"task_id": "hard", "num_docs": 30, "pii_density": 0.2},
+    8:  {"task_id": "schema_migration", "num_rows": 60, "migration_complexity": 0.5},
+    9:  {"task_id": "drift_detection", "drift_severity": 0.3},
+    10: {"task_id": "poisoning_detection", "num_rows": 150, "poison_rate": 0.15},
+}
+
+curriculum_state = CurriculumState()
+
+
+@app.post("/curriculum")
+def curriculum(request: CurriculumRequest):
+    global curriculum_state
+
+    try:
+        if request.action == "start":
+            curriculum_state = CurriculumState()
+            params = dict(CURRICULUM_LEVELS[1])
+            task_id = params.pop("task_id")
+            curriculum_state.current_task = task_id
+            curriculum_state.current_params = {"task_id": task_id, **params}
+            obs = env.reset(task_id, seed=random.randint(1, 99999), **params)
+            curriculum_state.total_episodes += 1
+            return _safe_json({"curriculum": curriculum_state.model_dump(), "observation": obs.model_dump()})
+
+        elif request.action == "next":
+            score = grade_by_criteria(
+                env.current_task,
+                env.dataframes.get("main", pd.DataFrame()),
+                env.grading_criteria,
+            )
+
+            curriculum_state.history.append({
+                "level": curriculum_state.current_level,
+                "task": curriculum_state.current_task,
+                "score": score,
+                "episode": curriculum_state.total_episodes,
+            })
+
+            all_scores = [h["score"] for h in curriculum_state.history]
+            curriculum_state.average_score = round(sum(all_scores) / len(all_scores), 4)
+
+            if score > request.score_threshold:
+                curriculum_state.current_level = min(10, curriculum_state.current_level + 1)
+            elif score < request.score_floor:
+                curriculum_state.current_level = max(1, curriculum_state.current_level - 1)
+
+            params = dict(CURRICULUM_LEVELS[curriculum_state.current_level])
+            task_id = params.pop("task_id")
+            curriculum_state.current_task = task_id
+            curriculum_state.current_params = {"task_id": task_id, **params}
+            obs = env.reset(task_id, seed=random.randint(1, 99999), **params)
+            curriculum_state.total_episodes += 1
+
+            return _safe_json({
+                "curriculum": curriculum_state.model_dump(),
+                "observation": obs.model_dump(),
+                "last_score": score,
+            })
+
+        elif request.action == "status":
+            return _safe_json(curriculum_state.model_dump())
+
+        elif request.action == "reset":
+            curriculum_state = CurriculumState()
+            return _safe_json({"message": "Curriculum reset", "curriculum": curriculum_state.model_dump()})
+
+    except Exception as e:
+        logger.exception("Error in /curriculum")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ─── BASELINE ───────────────────────────────────────────────────────────────
 
 @app.post("/baseline")
 def baseline():

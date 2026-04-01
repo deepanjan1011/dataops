@@ -457,3 +457,36 @@ def test_poisoning_grader():
     env.step(DataOpsAction(action_type="flag_rows", row_indices=[0, 1, 2, 3, 4]))
     score = grade_by_criteria("poisoning_detection", env.dataframes["main"], env.grading_criteria)
     assert 0.0 <= score <= 1.0
+
+
+# ── Phase 4: Curriculum Learning ───────────────────────────────────────────
+
+def test_curriculum_start():
+    from fastapi.testclient import TestClient
+    from dataops_gym.server.app import app
+    client = TestClient(app)
+    resp = client.post("/curriculum", json={"action": "start"})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["curriculum"]["current_level"] == 1
+    assert data["curriculum"]["current_task"] == "easy"
+
+
+def test_curriculum_next():
+    from fastapi.testclient import TestClient
+    from dataops_gym.server.app import app
+    client = TestClient(app)
+    client.post("/curriculum", json={"action": "start"})
+    client.post("/step", json={"action_type": "submit"})
+    resp = client.post("/curriculum", json={"action": "next"})
+    assert resp.status_code == 200
+    assert "last_score" in resp.json()
+
+
+def test_curriculum_status():
+    from fastapi.testclient import TestClient
+    from dataops_gym.server.app import app
+    client = TestClient(app)
+    client.post("/curriculum", json={"action": "start"})
+    resp = client.post("/curriculum", json={"action": "status"})
+    assert resp.status_code == 200

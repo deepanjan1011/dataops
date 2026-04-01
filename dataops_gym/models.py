@@ -131,3 +131,19 @@ class DataOpsState(BaseModel):
     max_steps: int = Field(30, description="Maximum steps allowed")
     cumulative_reward: float = Field(0.0, description="Total reward accumulated")
     done: bool = Field(False, description="Episode finished")
+
+
+# ─── CURRICULUM ───
+class CurriculumRequest(BaseModel):
+    action: Literal["start", "next", "status", "reset"] = "start"
+    score_threshold: float = 0.85
+    score_floor: float = 0.40
+
+
+class CurriculumState(BaseModel):
+    current_level: int = 1
+    current_task: str = "easy"
+    current_params: dict = {}
+    history: List[dict] = []
+    total_episodes: int = 0
+    average_score: float = 0.0
