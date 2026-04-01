@@ -525,3 +525,48 @@ def test_adversarial_corrupt_then_clean():
         })
     assert resp.json()["state"]["phase"] == "done"
     assert "cleaner_score" in resp.json()["state"]
+
+
+# ── Phase 6: Multi-Agent Collaborative Mode ────────────────────────────────
+
+def test_multi_agent_start():
+    from fastapi.testclient import TestClient
+    from dataops_gym.server.app import app
+    client = TestClient(app)
+    resp = client.post("/multi_agent/start", json={"task_id": "easy", "num_agents": 3, "seed": 42})
+    assert resp.status_code == 200
+    assert len(resp.json()["state"]["agents"]) == 3
+
+
+def test_multi_agent_step_no_conflict():
+    from fastapi.testclient import TestClient
+    from dataops_gym.server.app import app
+    client = TestClient(app)
+    resp = client.post("/multi_agent/start", json={"task_id": "easy", "num_agents": 2, "seed": 42})
+    agents = resp.json()["state"]["agents"]
+    first_agent = agents[0]
+    first_col = first_agent["assigned_columns"][0]
+
+    resp = client.post("/multi_agent/step", json={
+        "agent_id": first_agent["agent_id"],
+        "action": {"action_type": "strip_whitespace", "column_name": first_col}
+    })
+    assert resp.status_code == 200
+    assert len(resp.json()["state"]["conflicts"]) == 0
+
+
+def test_multi_agent_step_with_conflict():
+    from fastapi.testclient import TestClient
+    from dataops_gym.server.app import app
+    client = TestClient(app)
+    resp = client.post("/multi_agent/start", json={"task_id": "easy", "num_agents": 2, "seed": 42})
+    agents = resp.json()["state"]["agents"]
+    first_agent = agents[0]
+    second_agent_col = agents[1]["assigned_columns"][0]
+
+    resp = client.post("/multi_agent/step", json={
+        "agent_id": first_agent["agent_id"],
+        "action": {"action_type": "strip_whitespace", "column_name": second_agent_col}
+    })
+    assert resp.status_code == 200
+    assert len(resp.json()["state"]["conflicts"]) >= 1

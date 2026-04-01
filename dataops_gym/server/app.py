@@ -22,6 +22,7 @@ from dataops_gym.models import (
     DataOpsAction, DataOpsObservation, DataOpsState,
     CurriculumRequest, CurriculumState,
     AdversarialStartRequest, AdversarialStepRequest, AdversarialState,
+    MultiAgentStartRequest, MultiAgentStepRequest, AgentAssignment, MultiAgentState,
 )
 from dataops_gym.server.dataops_environment import DataOpsEnvironment
 from dataops_gym.graders.grader import grade, grade_by_criteria
@@ -660,6 +661,93 @@ def adversarial_step(request: AdversarialStepRequest):
         return _safe_json({"error": f"Wrong role for current phase. Phase: {adversarial_state.phase}"})
 
     return _safe_json({"state": adversarial_state.model_dump(), "observation": env._build_observation().model_dump()})
+
+
+# ─── MULTI-AGENT COLLABORATIVE MODE ────────────────────────────────────────
+
+multi_agent_state = None
+
+
+@app.post("/multi_agent/start")
+def multi_agent_start(request: MultiAgentStartRequest):
+    global multi_agent_state
+    env.reset(request.task_id, seed=request.seed, num_rows=request.num_rows)
+
+    columns = list(env.dataframes["main"].columns)
+    chunk_size = max(1, len(columns) // request.num_agents)
+
+    agents = []
+    responsibilities = [
+        "null_handling", "type_fixing", "deduplication_and_cleanup",
+        "format_standardization", "outlier_handling",
+    ]
+
+    for i in range(request.num_agents):
+        start = i * chunk_size
+        end = start + chunk_size if i < request.num_agents - 1 else len(columns)
+        agents.append(AgentAssignment(
+            agent_id=f"agent_{i+1}",
+            responsibility=responsibilities[i % len(responsibilities)],
+            assigned_columns=columns[start:end],
+        ))
+
+    multi_agent_state = MultiAgentState(agents=agents)
+
+    return _safe_json({
+        "state": multi_agent_state.model_dump(),
+        "observation": env._build_observation().model_dump(),
+    })
+
+
+@app.post("/multi_agent/step")
+def multi_agent_step(request: MultiAgentStepRequest):
+    global multi_agent_state
+    if multi_agent_state is None:
+        return _safe_json({"error": "Start multi-agent mode first"})
+
+    agent = next((a for a in multi_agent_state.agents if a.agent_id == request.agent_id), None)
+    if not agent:
+        return _safe_json({"error": f"Unknown agent: {request.agent_id}. Valid: {[a.agent_id for a in multi_agent_state.agents]}"})
+
+    # Conflict detection
+    if request.action.column_name and request.action.column_name not in agent.assigned_columns:
+        multi_agent_state.conflicts.append({
+            "agent": request.agent_id,
+            "column": request.action.column_name,
+            "assigned_to": next(
+                (a.agent_id for a in multi_agent_state.agents
+                 if request.action.column_name in a.assigned_columns), "unknown"
+            ),
+            "step": multi_agent_state.total_steps + 1,
+        })
+
+    obs = env.step(request.action)
+    multi_agent_state.total_steps += 1
+
+    multi_agent_state.action_log.append({
+        "agent_id": request.agent_id,
+        "action": request.action.action_type,
+        "column": request.action.column_name,
+        "result": obs.last_action_result,
+        "step": multi_agent_state.total_steps,
+    })
+
+    # Coordination score
+    total = multi_agent_state.total_steps
+    conflicts = len(multi_agent_state.conflicts)
+    multi_agent_state.coordination_score = round(1.0 - (conflicts / max(total, 1)), 4)
+
+    return _safe_json({
+        "state": multi_agent_state.model_dump(),
+        "observation": obs.model_dump(),
+    })
+
+
+@app.get("/multi_agent/status")
+def multi_agent_status():
+    if multi_agent_state is None:
+        return _safe_json({"error": "No active multi-agent session"})
+    return _safe_json(multi_agent_state.model_dump())
 
 
 # ─── BASELINE ───────────────────────────────────────────────────────────────

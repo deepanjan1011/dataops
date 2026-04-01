@@ -163,6 +163,32 @@ class AdversarialState(BaseModel):
     phase: Literal["corrupt", "clean", "done"] = "corrupt"
 
 
+class MultiAgentStartRequest(BaseModel):
+    task_id: str = "easy"
+    num_agents: int = 3
+    seed: Optional[int] = None
+    num_rows: int = 100
+
+
+class MultiAgentStepRequest(BaseModel):
+    agent_id: str
+    action: DataOpsAction
+
+
+class AgentAssignment(BaseModel):
+    agent_id: str
+    responsibility: str
+    assigned_columns: List[str]
+
+
+class MultiAgentState(BaseModel):
+    agents: List[AgentAssignment] = []
+    action_log: List[dict] = []
+    conflicts: List[dict] = []
+    coordination_score: float = 1.0
+    total_steps: int = 0
+
+
 class CurriculumRequest(BaseModel):
     action: Literal["start", "next", "status", "reset"] = "start"
     score_threshold: float = 0.85
