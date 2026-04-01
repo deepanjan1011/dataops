@@ -1,11 +1,11 @@
 """
 Baseline inference script for DataOps Gym.
-Uses OpenAI-compatible API (default: OpenRouter) to run an LLM agent against all 3 tasks.
+Uses OpenAI-compatible API to run an LLM agent against all 7 tasks.
 
 Usage:
     export OPENAI_API_KEY=your_key_here
-    export OPENAI_BASE_URL=https://openrouter.ai/api/v1   # optional
-    export BASELINE_MODEL=meta-llama/llama-3.1-8b-instruct:free  # optional
+    export OPENAI_BASE_URL=https://api.openai.com/v1   # optional
+    export BASELINE_MODEL=gpt-4o-mini                   # optional
     python -m dataops_gym.baseline.inference
 
 Or via the /baseline endpoint.
@@ -25,8 +25,8 @@ except ImportError:
 
 BASE_URL = os.getenv("DATAOPS_GYM_URL", "http://localhost:7860")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://openrouter.ai/api/v1")
-BASELINE_MODEL = os.getenv("BASELINE_MODEL", "meta-llama/llama-3.1-8b-instruct:free")
+OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+BASELINE_MODEL = os.getenv("BASELINE_MODEL", "gpt-4o-mini")
 
 
 def _parse_action(text: str) -> dict:
@@ -87,6 +87,60 @@ CRITICAL RULES:
 - user_id values may look like "U001", "user_42", or " 7 " — strip all non-digits and cast to int.
 """
 
+OUTLIER_EXTRA_INSTRUCTIONS = """
+OUTLIER DETECTION TASK:
+You have an employee dataset with planted outliers AND legitimate extreme values (e.g. executive salaries).
+1. Use detect_outliers to identify suspicious values per numeric column.
+2. Use clip_outliers to constrain clearly wrong values (e.g. negative salary, age > 120).
+3. Be careful NOT to clip legitimate executive salaries — only clip impossible values.
+4. When done, submit.
+
+Available actions:
+- {{"action_type": "detect_outliers", "column_name": "col", "outlier_method": "iqr|zscore|range"}}
+- {{"action_type": "clip_outliers", "column_name": "col", "clip_min": 0, "clip_max": 500000}}
+"""
+
+SCHEMA_MIGRATION_EXTRA_INSTRUCTIONS = """
+SCHEMA MIGRATION TASK:
+You need to restructure this dataset by splitting combined columns, standardizing formats, and mapping codes.
+1. split_column on "full_name" with delimiter=" ", new_columns=["first_name","last_name"], max_splits=1
+2. apply_regex on "phone" to standardize phone numbers
+3. map_values on "status_code" to convert codes ("1"="active", "2"="inactive", etc.)
+4. split_column on "address" or "datetime" fields as needed
+5. When done, submit.
+
+Available actions:
+- {{"action_type": "split_column", "column_name": "col", "delimiter": " ", "new_columns": ["a","b"], "max_splits": 1}}
+- {{"action_type": "map_values", "column_name": "col", "value_mapping": {{"old": "new"}}}}
+"""
+
+DRIFT_EXTRA_INSTRUCTIONS = """
+DRIFT DETECTION TASK:
+You have historical data and must classify incoming stream batches as "normal" or "drift".
+For each batch:
+1. advance_stream — loads the next batch into "current_batch"
+2. analyze_distribution on key columns — compare batch stats to historical
+3. label_batch with drift_label="normal" or "drift" based on your analysis
+
+Repeat for all batches, then submit.
+
+Available actions:
+- {{"action_type": "advance_stream"}}
+- {{"action_type": "analyze_distribution", "column_name": "col"}}
+- {{"action_type": "label_batch", "drift_label": "normal|drift"}}
+"""
+
+POISONING_EXTRA_INSTRUCTIONS = """
+POISONING DETECTION TASK:
+This is a sentiment dataset where some rows have been poisoned (label flips, trigger phrases).
+1. Look for suspicious patterns: short generic text with strong labels, "EVAL_OVERRIDE" triggers, mismatched sentiment.
+2. Use flag_rows with row_indices to mark suspicious rows.
+3. Be precise — flagging clean rows hurts your F1 score.
+
+Available actions:
+- {{"action_type": "flag_rows", "row_indices": [0, 5, 10]}}
+"""
+
 
 def _build_system_prompt(task_id: str, obs: dict) -> str:
     base = f"""You are a data engineering agent. Your job is to clean a dataset.
@@ -104,14 +158,29 @@ You can take these actions (one at a time, respond with JSON only):
 - {{"action_type": "rename_column", "column_name": "old", "new_name": "new"}}
 - {{"action_type": "merge_tables", "right_table": "name", "merge_on": "col", "merge_how": "left|inner|right|outer"}}
 - {{"action_type": "filter_rows", "filter_condition": "pandas query string"}}
+- {{"action_type": "clip_outliers", "column_name": "col", "clip_min": 0, "clip_max": 999}}
+- {{"action_type": "detect_outliers", "column_name": "col", "outlier_method": "iqr|zscore|range"}}
+- {{"action_type": "split_column", "column_name": "col", "delimiter": " ", "new_columns": ["a","b"], "max_splits": 1}}
+- {{"action_type": "map_values", "column_name": "col", "value_mapping": {{"old": "new"}}}}
+- {{"action_type": "advance_stream"}}
+- {{"action_type": "analyze_distribution", "column_name": "col"}}
+- {{"action_type": "label_batch", "drift_label": "normal|drift"}}
+- {{"action_type": "flag_rows", "row_indices": [0, 1, 2]}}
 - {{"action_type": "submit"}}
 
 Look at the observation carefully: check column summaries, null counts, data types, and sample values.
 When you think the data is clean enough, use submit.
 Respond ONLY with a single JSON action object. No explanation."""
 
-    if task_id == "medium":
-        base += "\n" + MEDIUM_EXTRA_INSTRUCTIONS
+    task_extras = {
+        "medium": MEDIUM_EXTRA_INSTRUCTIONS,
+        "outlier_detection": OUTLIER_EXTRA_INSTRUCTIONS,
+        "schema_migration": SCHEMA_MIGRATION_EXTRA_INSTRUCTIONS,
+        "drift_detection": DRIFT_EXTRA_INSTRUCTIONS,
+        "poisoning_detection": POISONING_EXTRA_INSTRUCTIONS,
+    }
+    if task_id in task_extras:
+        base += "\n" + task_extras[task_id]
 
     return base
 
@@ -133,7 +202,8 @@ def run_task(task_id: str) -> float:
     print(f"  Starting task '{task_id}' — {obs['total_rows']} rows, "
           f"{obs['total_columns']} cols, health={obs['data_health_score']:.3f}")
 
-    for step in range(30):
+    max_steps = 60 if task_id == "drift_detection" else 30
+    for step in range(max_steps):
         if obs.get("done", False):
             print(f"  Episode done at step {step}.")
             break
@@ -220,14 +290,18 @@ def run_task(task_id: str) -> float:
     return score
 
 
+ALL_TASKS = ["easy", "medium", "hard", "outlier_detection", "schema_migration",
+              "drift_detection", "poisoning_detection"]
+
+
 def run_all_tasks() -> dict:
-    """Run baseline on all 3 tasks and return scores."""
+    """Run baseline on all 7 tasks and return scores."""
     if not OPENAI_API_KEY:
         print("ERROR: Set OPENAI_API_KEY environment variable")
         return {}
 
     scores = {}
-    for task_id in ["easy", "medium", "hard"]:
+    for task_id in ALL_TASKS:
         print(f"\n{'='*50}")
         print(f"Task: {task_id.upper()}  (model: {BASELINE_MODEL})")
         print(f"{'='*50}")

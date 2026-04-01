@@ -14,15 +14,16 @@ pinned: false
 
 # 🧹 DataOps Gym
 
-### An OpenEnv-Compatible RL Environment for AI Data Engineering Agents
+### A Research-Grade RL Environment for AI Data Engineering Agents
 
 [![OpenEnv](https://img.shields.io/badge/OpenEnv-compatible-brightgreen?style=flat-square)](https://openenv.dev)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue?style=flat-square)](https://python.org)
 [![Docker](https://img.shields.io/badge/docker-ready-2496ED?style=flat-square&logo=docker&logoColor=white)](https://hub.docker.com)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.100%2B-009688?style=flat-square&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
+[![Gradio](https://img.shields.io/badge/Gradio-Dashboard-ff7c00?style=flat-square&logo=gradio&logoColor=white)](https://gradio.app)
 [![License: MIT](https://img.shields.io/badge/license-MIT-yellow?style=flat-square)](LICENSE)
 
-**[🚀 Live Demo](https://huggingface.co/spaces/deepanjan1011/dataops-gym)** · **[📖 API Docs](https://deepanjan1011-dataops-gym.hf.space/docs)** · **[🧪 Try It Now](#quick-start)**
+**[Live Demo](https://huggingface.co/spaces/deepanjan1011/dataops-gym)** · **[API Docs](https://deepanjan1011-dataops-gym.hf.space/docs)** · **[Try It Now](#quick-start)**
 
 </div>
 
@@ -30,7 +31,7 @@ pinned: false
 
 ## The Problem
 
-**Data engineers spend 60–80% of their time cleaning data** — not building models. Yet there is no standardised benchmark environment where AI agents can learn, practice, and be evaluated on real data engineering workflows.
+**Data engineers spend 60-80% of their time cleaning data** — not building models. Yet there is no standardised benchmark environment where AI agents can learn, practice, and be evaluated on real data engineering workflows.
 
 DataOps Gym fills that gap.
 
@@ -38,23 +39,24 @@ DataOps Gym fills that gap.
 
 ## What Is DataOps Gym?
 
-DataOps Gym is a fully OpenEnv-compliant reinforcement learning environment that puts an AI agent in the role of a data engineer. The agent receives **messy, real-world-style datasets** and must clean them using programmatic actions — strip whitespace, fix types, redact PII, merge tables — guided by a dense reward signal that measures progress toward a clean dataset.
+DataOps Gym is a fully OpenEnv-compliant reinforcement learning environment that puts an AI agent in the role of a data engineer. The agent receives **messy, real-world-style datasets** and must clean them using programmatic actions — guided by a dense reward signal that measures progress toward clean data.
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                        DataOps Gym                              │
-│                                                                 │
-│   ┌──────────┐    observation     ┌────────────────────────┐   │
-│   │          │ ◄─────────────── │                        │   │
-│   │  Agent   │                   │  FastAPI Environment   │   │
-│   │  (LLM /  │ ──── action ───► │  (pandas DataFrames)   │   │
-│   │   RL)    │                   │                        │   │
-│   │          │ ◄── reward+done ─ │  Grader + Reward Fn    │   │
-│   └──────────┘                   └────────────────────────┘   │
-│                                                                 │
-│   Tasks: easy (cleaning) · medium (merge) · hard (PII)         │
-│   + custom (upload your own CSV/JSON)                          │
-└─────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────┐
+│                           DataOps Gym v2.0                               │
+│                                                                          │
+│   ┌──────────┐    observation     ┌──────────────────────────────┐      │
+│   │          │ ◄─────────────── │                              │      │
+│   │  Agent   │                   │  FastAPI Environment         │      │
+│   │  (LLM /  │ ──── action ───► │  (pandas DataFrames)         │      │
+│   │   RL)    │                   │                              │      │
+│   │          │ ◄── reward+done ─ │  Grader + Reward Function    │      │
+│   └──────────┘                   └──────────────────────────────┘      │
+│                                                                          │
+│   7 Tasks: easy · medium · hard · outlier · schema · drift · poisoning  │
+│   Modes:  curriculum · adversarial · multi-agent · custom upload         │
+│   Dashboard: Gradio UI at root (/) with 5 interactive tabs              │
+└──────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -63,13 +65,17 @@ DataOps Gym is a fully OpenEnv-compliant reinforcement learning environment that
 
 | Feature | Description |
 |---|---|
-| **3 graded tasks** | Easy → Medium → Hard with deterministic 0.0–1.0 scoring |
-| **14 action types** | Full pandas-like API: cast, merge, regex, impute, undo, and more |
+| **7 graded tasks** | Easy → Hard + Outlier Detection, Schema Migration, Drift Detection, Poisoning Detection |
+| **27 action types** | Full pandas-like API: cast, merge, regex, impute, clip outliers, split columns, flag rows, and more |
+| **Curriculum learning** | 10 difficulty levels with automatic progression based on performance |
+| **Adversarial mode** | Two-player game: corruptor injects mess, cleaner fixes it |
+| **Multi-agent mode** | Collaborative cleaning with column assignments and conflict detection |
+| **Gradio dashboard** | 5-tab interactive UI: Playground, Rewards, Curriculum, Adversarial, Multi-Agent |
 | **Procedural generation** | Fresh data every episode; `seed=42` for reproducibility |
-| **Configurable difficulty** | Tune `null_percentage`, `duplicate_rate`, `pii_density` per reset |
-| **Undo/rollback** | Agent can revert last action (−0.02 penalty — teaches caution) |
+| **Configurable difficulty** | Tune `null_percentage`, `duplicate_rate`, `poison_rate`, and more per reset |
+| **Undo/rollback** | Agent can revert last action (max 5 deep, small penalty) |
 | **Custom data upload** | `POST /upload` accepts any CSV/JSON, auto-detects issues |
-| **Dense reward signal** | Per-step health delta × 2.0 — not just binary end-of-episode |
+| **Dense reward signal** | Per-step health delta — not just binary end-of-episode |
 | **Full OpenEnv spec** | `reset()` · `step()` · `state()` · `openenv.yaml` · typed Pydantic models |
 
 ---
@@ -82,7 +88,7 @@ docker build -t dataops-gym .
 docker run -p 7860:7860 dataops-gym
 
 # Local
-pip install fastapi uvicorn pandas numpy faker openai python-multipart python-dotenv
+pip install fastapi uvicorn pandas numpy faker openai python-multipart python-dotenv gradio matplotlib
 uvicorn dataops_gym.server.app:app --port 7860
 ```
 
@@ -102,138 +108,71 @@ curl -X POST localhost:7860/step \
 curl -X POST localhost:7860/grader
 ```
 
+**Open the Gradio dashboard:** Navigate to `http://localhost:7860` in your browser.
+
 ---
 
-## Tasks
+## Tasks (7)
 
 ### Easy — Product Sales Cleaning
-**Score range:** 0.70–0.95 | **Max steps:** 30
+**Difficulty:** Easy | **Max steps:** 30
 
-A 50-row product sales table with injected real-world mess:
-
-| Issue | Details |
-|---|---|
-| Price format | `"$1,299.99"` stored as strings |
-| Date formats | Mixed: `2024-01-15`, `01/15/2024`, `Jan 15, 2024` |
-| Category casing | `"FOOD"`, `"food"`, `"Food"` for the same value |
-| Nulls | ~8% of cells across columns |
-| Duplicates | ~10% duplicate rows |
-| Whitespace | Leading/trailing spaces in product names |
+A 50-row product sales table with injected mess: `"$1,299.99"` strings as prices, mixed date formats, inconsistent category casing, ~8% nulls, ~10% duplicates, whitespace issues.
 
 **Agent goal:** Clean all issues, submit. Graded on null cleanliness, type correctness, deduplication, and format compliance.
 
----
-
 ### Medium — Multi-Table User/Purchase Merge
-**Score range:** 0.40–0.90 | **Max steps:** 30
+**Difficulty:** Medium | **Max steps:** 30
 
-Two related tables that must be cleaned and joined:
+Two related tables with mismatched user IDs (`"1"`, `"001"`, `"USR-001"`), `"$49.99"` strings, mixed dates, status casing issues, and ~8% duplicate user rows.
 
-| Issue | Details |
-|---|---|
-| User ID formats | `"1"`, `"001"`, `"USR-001"` — all the same user |
-| Amount format | `"$49.99"` strings in purchases table |
-| Date formats | Mixed across both tables |
-| Status casing | `"ACTIVE"`, `"Active"`, `"active"` |
-| Nulls | Names and statuses partially missing |
-| Duplicates | ~8% duplicate user rows |
-
-**Agent goal:** Standardise IDs → clean both tables → left-join → filter active users only.
-
----
+**Agent goal:** Standardise IDs, clean both tables, left-join, filter active users.
 
 ### Hard — PII Redaction
-**Score range:** 0.20–1.0 | **Max steps:** 30
+**Difficulty:** Hard | **Max steps:** 30
 
-30 web-scraped text documents with embedded PII:
+30 web-scraped text documents with embedded PII (emails, phone numbers, credit cards, SSNs).
 
-| PII Type | Example | Pattern |
-|---|---|---|
-| Email | `alice@example.com` | RFC 5322 |
-| Phone | `(555) 123-4567` | 3 formats |
-| Credit card | `4532-1234-5678-9012` | 16-digit groups |
-| SSN | `123-45-6789` | US SSN format |
+**Agent goal:** Replace all PII with `[REDACTED]`. Graded on recall, precision, and text preservation.
 
-**Agent goal:** Replace all PII with `[REDACTED]`. Graded on recall (caught all PII), precision (didn't over-redact), and text preservation.
+### Outlier Detection — Employee Dataset
+**Difficulty:** Medium-Hard | **Max steps:** 30
 
----
+100-row employee dataset with planted outliers AND legitimate extreme values (executive salaries). The agent must distinguish real anomalies from valid data.
+
+**Agent goal:** Clip impossible values while preserving legitimate extremes. Graded on outlier removal (0.35), legitimate preservation (0.35), row retention (0.15), data integrity (0.15).
+
+### Schema Migration — Dataset Restructuring
+**Difficulty:** Hard | **Max steps:** 30
+
+60-row dataset needing structural changes: split combined columns (full_name, address), standardize phone numbers, map status codes to strings.
+
+**Agent goal:** Restructure to target schema. Graded on schema match (0.40), value correctness (0.30), row retention (0.15), old columns removed (0.15).
+
+### Drift Detection — Streaming Data
+**Difficulty:** Hard | **Max steps:** 60
+
+200 historical rows + 15 streaming batches. Drift starts at batch 8 with configurable severity. The agent must analyze each batch against historical data and label it.
+
+**Agent goal:** Label each batch as "normal" or "drift". Graded on F1 score (0.7) + coverage (0.3).
+
+### Poisoning Detection — Sentiment Dataset
+**Difficulty:** Very Hard | **Max steps:** 30
+
+100-row sentiment classification dataset with ~10% poisoned rows: label flips, subtle mislabels, trigger phrase injections ("EVAL_OVERRIDE").
+
+**Agent goal:** Flag poisoned rows without flagging clean ones. Graded on F1 score (0.7) + clean preservation (0.3).
 
 ### Custom — Bring Your Own Data
-Upload any `.csv` or `.json` file. The environment auto-detects:
-- Missing values, duplicates, type mismatches
-- Whitespace, inconsistent casing
-- Potential PII (emails, phones)
-- Mixed date formats
+Upload any `.csv` or `.json` file. The environment auto-detects issues and creates a cleaning task.
 
 ```bash
 curl -X POST localhost:7860/upload -F "file=@my_data.csv"
 ```
 
-Returns detected issues, a task description, and the initial observation — then use `/step` and `/grader` as normal.
-
 ---
 
-## Procedural Generation
-
-Every `reset()` generates fresh dirty data with the same problem structure but different values. No two episodes are identical by default.
-
-```bash
-# Reproducible baseline (same data every time)
-curl -X POST localhost:7860/reset \
-  -H "Content-Type: application/json" \
-  -d '{"task_id": "easy", "seed": 42}'
-
-# Random fresh episode
-curl -X POST localhost:7860/reset \
-  -H "Content-Type: application/json" \
-  -d '{"task_id": "easy"}'
-```
-
----
-
-## Configurable Difficulty
-
-Tune difficulty per episode without code changes:
-
-### Easy
-| Parameter | Default | Range | Effect |
-|---|---|---|---|
-| `num_rows` | 50 | 10–1000 | Dataset size |
-| `null_percentage` | 0.08 | 0.0–0.5 | How many cells are null |
-| `duplicate_rate` | 0.10 | 0.0–0.3 | Fraction of duplicate rows |
-| `format_inconsistency` | 0.5 | 0.0–1.0 | Date format variety (0 = uniform) |
-
-### Medium
-| Parameter | Default | Range | Effect |
-|---|---|---|---|
-| `num_users` | 40 | 10–500 | Users table size |
-| `num_purchases` | 60 | 10–1000 | Purchases table size |
-| `null_percentage` | 0.05 | 0.0–0.5 | Missing values rate |
-| `duplicate_rate` | 0.08 | 0.0–0.3 | Duplicate user rows |
-
-### Hard
-| Parameter | Default | Range | Effect |
-|---|---|---|---|
-| `num_docs` | 30 | 5–500 | Number of documents |
-| `pii_density` | 0.3 | 0.0–1.0 | Fraction of docs with PII |
-| `pii_variety` | 0.5 | 0.0–1.0 | PII types per doc |
-
-**Example — stress test:**
-```bash
-curl -X POST localhost:7860/reset \
-  -H "Content-Type: application/json" \
-  -d '{
-    "task_id": "easy",
-    "seed": 42,
-    "num_rows": 500,
-    "null_percentage": 0.35,
-    "duplicate_rate": 0.25
-  }'
-```
-
----
-
-## Action Space (14 actions)
+## Action Space (27 actions)
 
 ```json
 {
@@ -242,6 +181,8 @@ curl -X POST localhost:7860/reset \
   "target_type": "float"
 }
 ```
+
+### Cleaning Actions
 
 | Action | Parameters | Description |
 |---|---|---|
@@ -259,6 +200,123 @@ curl -X POST localhost:7860/reset \
 | `fill_value` | `column_name`, `fill_value` | Fill nulls with a literal value |
 | `submit` | — | End episode, trigger grading |
 | `undo` | — | Revert last action (max 5 deep) |
+
+### Outlier / Schema Actions
+
+| Action | Parameters | Description |
+|---|---|---|
+| `clip_outliers` | `column_name`, `clip_min`, `clip_max` | Clip values to range |
+| `detect_outliers` | `column_name`, `outlier_method` | Analyse outliers (read-only) |
+| `split_column` | `column_name`, `delimiter`, `new_columns`, `max_splits` | Split column by delimiter |
+| `map_values` | `column_name`, `value_mapping` | Map values via dict |
+
+### Drift / Poisoning Actions
+
+| Action | Parameters | Description |
+|---|---|---|
+| `advance_stream` | — | Load next batch from stream |
+| `analyze_distribution` | `column_name` | Compare batch vs historical stats |
+| `label_batch` | `drift_label` | Label current batch as "normal" or "drift" |
+| `flag_rows` | `row_indices` | Flag suspicious rows by index |
+
+### Adversarial Corruption Actions
+
+| Action | Parameters | Description |
+|---|---|---|
+| `inject_nulls` | `column_name`, `inject_count` | Inject null values |
+| `swap_values` | `column_name`, `inject_count` | Swap random pairs |
+| `introduce_typos` | `column_name`, `typo_rate` | Add character-level typos |
+| `flip_labels` | `column_name`, `inject_count` | Flip values to random alternatives |
+| `inject_pii` | `column_name`, `inject_count` | Append PII strings to cells |
+
+---
+
+## Curriculum Learning (10 Levels)
+
+Automatic difficulty progression based on agent performance:
+
+| Level | Task | Key Parameters |
+|---|---|---|
+| 1 | easy | 30 rows, 5% nulls, 5% duplicates |
+| 2 | easy | 50 rows, 10% nulls, 10% duplicates |
+| 3 | easy | 100 rows, 20% nulls, 15% duplicates |
+| 4 | medium | 40 rows, 5% nulls |
+| 5 | medium | 80 rows, 15% nulls |
+| 6 | outlier_detection | 80 rows, 5% outlier rate |
+| 7 | hard | 30 docs, 20% PII density |
+| 8 | schema_migration | 60 rows, 50% complexity |
+| 9 | drift_detection | 30% drift severity |
+| 10 | poisoning_detection | 150 rows, 15% poison rate |
+
+**Progression rules:** Score > 0.85 advances, score < 0.40 demotes, otherwise stays.
+
+```bash
+# Start curriculum
+curl -X POST localhost:7860/curriculum -H "Content-Type: application/json" \
+  -d '{"action": "start"}'
+
+# After cleaning, advance to next level
+curl -X POST localhost:7860/curriculum -H "Content-Type: application/json" \
+  -d '{"action": "next"}'
+```
+
+---
+
+## Adversarial Mode
+
+Two-player game where a **corruptor** injects data quality issues and a **cleaner** tries to fix them:
+
+1. **Corrupt phase** (5 rounds): Corruptor uses `inject_nulls`, `swap_values`, `introduce_typos`, `flip_labels`, `inject_pii`
+2. **Clean phase** (5 rounds): Cleaner uses standard cleaning actions
+3. **Scoring:** Cleaner score = similarity to original clean data; Corruptor score = 1 - cleaner score
+
+```bash
+# Start adversarial game
+curl -X POST localhost:7860/adversarial/start -H "Content-Type: application/json" \
+  -d '{"num_rows": 50, "seed": 42}'
+
+# Corrupt
+curl -X POST localhost:7860/adversarial/step -H "Content-Type: application/json" \
+  -d '{"role": "corruptor", "action": {"action_type": "inject_nulls", "column_name": "price", "inject_count": 5}}'
+
+# Clean
+curl -X POST localhost:7860/adversarial/step -H "Content-Type: application/json" \
+  -d '{"role": "cleaner", "action": {"action_type": "impute_missing", "column_name": "price", "strategy": "mean"}}'
+```
+
+---
+
+## Multi-Agent Mode
+
+Collaborative cleaning where multiple agents are assigned column subsets:
+
+- Each agent gets a **responsibility** (null handling, type fixing, etc.) and **assigned columns**
+- **Conflict detection:** Actions on columns outside an agent's assignment are logged
+- **Coordination score:** `1.0 - (conflicts / total_steps)` — measures how well agents stay in their lanes
+
+```bash
+# Start 3-agent session
+curl -X POST localhost:7860/multi_agent/start -H "Content-Type: application/json" \
+  -d '{"task_id": "easy", "num_agents": 3, "seed": 42}'
+
+# Agent 1 acts on its assigned columns
+curl -X POST localhost:7860/multi_agent/step -H "Content-Type: application/json" \
+  -d '{"agent_id": "agent_1", "action": {"action_type": "drop_nulls", "column_name": "price"}}'
+```
+
+---
+
+## Gradio Dashboard
+
+An interactive 5-tab dashboard is served at the root URL (`/`):
+
+| Tab | Features |
+|---|---|
+| **Interactive Playground** | Task selector, difficulty sliders, reset, data preview, action executor, health score, grading |
+| **Reward Visualization** | Cumulative reward line chart, action reward bar chart, column health heatmap |
+| **Curriculum** | Start/next buttons, level display, performance history chart |
+| **Adversarial** | Corruptor/cleaner panels, phase indicator, scores |
+| **Multi-Agent** | Agent assignments, per-agent actions, conflict log, coordination score |
 
 ---
 
@@ -295,17 +353,17 @@ curl -X POST localhost:7860/reset \
 
 | Signal | Value | Rationale |
 |---|---|---|
-| Health score improvement | `Δhealth × 2.0` | Reward every step of progress |
-| Step penalty | `−0.01` | Encourage efficiency |
-| Invalid action | `−0.1` | Penalise misuse of the API |
-| Dropped needed column | `−0.5` | Penalise destructive actions |
-| Excessive row loss (>20%) | `−0.3` | Penalise over-filtering |
+| Health score improvement | `delta_health * 2.0` | Reward every step of progress |
+| Step penalty | `-0.01` | Encourage efficiency |
+| Invalid action | `-0.1` | Penalise misuse of the API |
+| Dropped needed column | `-0.5` | Penalise destructive actions |
+| Excessive row loss (>20%) | `-0.3` | Penalise over-filtering |
 | Submit with health > 0.9 | `+0.5` | Reward high-quality completion |
 | PII type redacted (hard) | `+0.2` per type | Reward each PII category caught |
-| Undo | `−0.02` | Available but costly |
-| Undo on empty history | `−0.05` | Teach boundary awareness |
+| Undo | `-0.02` | Available but costly |
+| Undo on empty history | `-0.05` | Teach boundary awareness |
 
-All rewards clamped to `[−1.0, 1.0]`.
+All rewards clamped to `[-1.0, 1.0]`.
 
 ---
 
@@ -313,11 +371,15 @@ All rewards clamped to `[−1.0, 1.0]`.
 
 `gpt-4o-mini` agent with `seed=42` — fully reproducible:
 
-| Task | Raw Score | After Agent | Model |
-|---|---|---|---|
-| easy | 0.742 | **0.9623** | gpt-4o-mini |
-| medium | 0.771 | **0.9000** | gpt-4o-mini |
-| hard | 0.597 | **1.0000** | gpt-4o-mini |
+| Task | Difficulty | Raw Score | After Agent | Model |
+|---|---|---|---|---|
+| easy | Easy | 0.742 | **0.9623** | gpt-4o-mini |
+| medium | Medium | 0.771 | **0.9000** | gpt-4o-mini |
+| hard | Hard | 0.597 | **1.0000** | gpt-4o-mini |
+| outlier_detection | Medium-Hard | — | *pending* | gpt-4o-mini |
+| schema_migration | Hard | — | *pending* | gpt-4o-mini |
+| drift_detection | Hard | — | *pending* | gpt-4o-mini |
+| poisoning_detection | Very Hard | — | *pending* | gpt-4o-mini |
 
 To reproduce:
 ```bash
@@ -331,17 +393,23 @@ python -m dataops_gym.baseline.inference
 
 ## API Reference
 
-| Endpoint | Method | Body / Notes |
+| Endpoint | Method | Description |
 |---|---|---|
-| `/` | GET | Welcome message + endpoint map |
+| `/` | GET | Gradio dashboard (interactive UI) |
 | `/health` | GET | `{"status": "healthy"}` |
-| `/tasks` | GET | All tasks + action schema + configurable params |
-| `/reset` | POST | `{"task_id": "easy", "seed": 42, "null_percentage": 0.2}` |
-| `/step` | POST | `{"action_type": "cast_type", "column_name": "price", "target_type": "float"}` |
+| `/tasks` | GET | All 7 tasks + action schema + configurable params |
+| `/reset` | POST | Start episode: `{"task_id": "easy", "seed": 42, ...}` |
+| `/step` | POST | Take action: `{"action_type": "cast_type", ...}` |
 | `/state` | GET | Current episode state (step count, reward, done) |
-| `/grader` | POST | Score current state; returns 0.0–1.0 |
-| `/baseline` | POST | Run LLM agent across all 3 tasks (needs `OPENAI_API_KEY`) |
-| `/upload` | POST | Multipart file upload — `.csv` or `.json`, max 10 MB |
+| `/grader` | POST | Score current state; returns 0.0-1.0 |
+| `/upload` | POST | Upload CSV/JSON, auto-detect issues |
+| `/curriculum` | POST | Curriculum learning: `{"action": "start\|next\|status\|reset"}` |
+| `/adversarial/start` | POST | Start adversarial game: `{"num_rows": 50, "seed": 42}` |
+| `/adversarial/step` | POST | Corruptor/cleaner action: `{"role": "...", "action": {...}}` |
+| `/multi_agent/start` | POST | Start multi-agent: `{"task_id": "easy", "num_agents": 3}` |
+| `/multi_agent/step` | POST | Agent action: `{"agent_id": "agent_1", "action": {...}}` |
+| `/multi_agent/status` | GET | Current multi-agent session state |
+| `/baseline` | POST | Run LLM agent on all tasks (needs `OPENAI_API_KEY`) |
 | `/docs` | GET | Interactive Swagger UI |
 
 ---
@@ -350,22 +418,23 @@ python -m dataops_gym.baseline.inference
 
 ```
 dataops_gym/
-├── models.py                   # Pydantic models: Action, Observation, State
+├── models.py                   # Pydantic models: Action, Observation, State, Curriculum, Adversarial, MultiAgent
 ├── server/
-│   ├── app.py                  # FastAPI app — all endpoints
+│   ├── app.py                  # FastAPI app — all endpoints + Gradio mount
+│   ├── gradio_app.py           # Gradio dashboard (5 tabs)
 │   ├── dataops_environment.py  # Core RL environment logic
 │   └── requirements.txt
 ├── tasks/
-│   ├── generators.py           # Procedural dataset generators (all 3 tasks)
+│   ├── generators.py           # Procedural dataset generators (7 tasks)
 │   ├── auto_detect.py          # Issue detection for custom uploads
 │   ├── generate_datasets.py    # Static fallback dataset generator
 │   └── datasets/               # Static fallback CSVs/JSONs
 ├── graders/
-│   └── grader.py               # grade() + grade_by_criteria()
+│   └── grader.py               # grade() + grade_by_criteria() for all 7 tasks
 ├── baseline/
-│   └── inference.py            # LLM baseline agent
+│   └── inference.py            # LLM baseline agent (all 7 tasks)
 ├── tests/
-│   └── test_environment.py     # 20 pytest tests
+│   └── test_environment.py     # 45 pytest tests
 └── openenv.yaml                # OpenEnv spec compliance file
 Dockerfile                      # HF Spaces compatible (user 1000)
 ```
@@ -377,8 +446,8 @@ Dockerfile                      # HF Spaces compatible (user 1000)
 ```yaml
 # openenv.yaml
 name: dataops-gym
-version: "1.0.0"
-tasks: [easy, medium, hard]
+version: "2.0.0"
+tasks: [easy, medium, hard, outlier_detection, schema_migration, drift_detection, poisoning_detection]
 observation_type: structured_json
 action_type: structured_json
 reward_range: [-1.0, 1.0]
@@ -394,10 +463,12 @@ All endpoints return typed Pydantic models. `openenv validate` passes.
 
 ## Why DataOps Gym?
 
-- **Real-world domain.** Data cleaning is a skill every ML engineer needs. Unlike game environments, performance here directly translates to practical value.
-- **Rich action space.** 14 typed operations covering the full pandas data-cleaning API.
-- **Dense rewards.** Per-step health score delta means agents get signal at every action — not just at episode end.
-- **Scalable difficulty.** Configurable parameters make it easy to generate beginner to expert-level episodes without code changes.
-- **No golden dataset required.** Criteria-based grading works on procedurally generated data, enabling infinite unique episodes.
-- **Undo teaches planning.** The rollback action (with a small cost) trains agents to be cautious rather than greedy.
-- **Custom data.** The `/upload` endpoint makes DataOps Gym useful for evaluating agents on real private datasets.
+- **Real-world domain.** Data cleaning is a skill every ML engineer needs. Performance here directly translates to practical value.
+- **Rich action space.** 27 typed operations covering the full data engineering workflow.
+- **Dense rewards.** Per-step health score delta means agents get signal at every action.
+- **Scalable difficulty.** 10-level curriculum + configurable parameters for beginner to expert-level episodes.
+- **Adversarial training.** Corruptor/cleaner game creates increasingly challenging scenarios.
+- **Multi-agent coordination.** Test collaborative data cleaning with conflict detection.
+- **No golden dataset required.** Criteria-based grading enables infinite unique episodes.
+- **Interactive dashboard.** Gradio UI for manual exploration, visualization, and debugging.
+- **Custom data.** The `/upload` endpoint makes it useful for real private datasets.
