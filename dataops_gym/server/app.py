@@ -104,23 +104,23 @@ def _state_to_dict(state: DataOpsState) -> Dict[str, Any]:
 
 # ─── ENDPOINTS ───────────────────────────────────────────────────────────────
 
-@app.get("/")
-def root():
-    return {
-        "name": "DataOps Gym",
-        "description": "AI Data Quality & Curation Environment for OpenEnv",
-        "version": "1.0.0",
-        "endpoints": {
-            "health": "/health",
-            "tasks": "/tasks",
-            "reset": "/reset (POST)",
-            "step": "/step (POST)",
-            "state": "/state",
-            "grader": "/grader (POST)",
-            "baseline": "/baseline (POST)",
-            "docs": "/docs",
-        },
-    }
+# @app.get("/")
+# def root():
+#     return {
+#         "name": "DataOps Gym",
+#         "description": "AI Data Quality & Curation Environment for OpenEnv",
+#         "version": "1.0.0",
+#         "endpoints": {
+#             "health": "/health",
+#             "tasks": "/tasks",
+#             "reset": "/reset (POST)",
+#             "step": "/step (POST)",
+#             "state": "/state",
+#             "grader": "/grader (POST)",
+#             "baseline": "/baseline (POST)",
+#             "docs": "/docs",
+#         },
+#     }
 
 
 @app.get("/health")
