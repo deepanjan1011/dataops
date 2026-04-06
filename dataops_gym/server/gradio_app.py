@@ -159,6 +159,47 @@ def create_gradio_interface(env):
             "0.0",
         )
 
+    def playground_upload(file_info):
+        if file_info is None:
+            return gr.update(), "N/A", "0", "Upload cleared.", gr.update(), "0.0"
+
+        _reset_chart_state()
+        try:
+            name = file_info.name
+            if name.endswith('.csv'):
+                df = pd.read_csv(name)
+            elif name.endswith('.json'):
+                df = pd.read_json(name)
+            else:
+                return gr.update(), "Error", "0", "Unsupported file", gr.update(), "0.0"
+
+            import uuid
+            env.current_task = "custom"
+            env.step_count = 0
+            env.cumulative_reward = 0.0
+            env.done = False
+            env.episode_id = str(uuid.uuid4())
+            env._last_penalty = 0.0
+            env._state_history = []
+            env.dataframes = {"main": df}
+            env.golden_df = None
+            env.grading_criteria = {}
+            env.stream_batches = []
+            env.previous_health_score = env._calculate_health_score()
+            env.last_action_result = "Custom dataset loaded."
+
+            columns = list(df.columns) if not df.empty else []
+            return (
+                df.head(20),
+                f"{env.previous_health_score:.3f}",
+                str(env.step_count),
+                env.last_action_result,
+                gr.update(choices=columns, value=columns[0] if columns else None),
+                "0.0",
+            )
+        except Exception as e:
+            return gr.update(), "Error", "0", f"Error: {e}", gr.update(), "0.0"
+
     def playground_step(action_type, column_name, strategy, target_type, pattern,
                         replacement, new_name, fill_val, filter_cond, drift_label,
                         row_indices_str):
@@ -504,6 +545,8 @@ def create_gradio_interface(env):
                     dup_rate_sl = gr.Slider(0.0, 0.3, value=0.10, step=0.01, label="Duplicate Rate")
                     seed_tb = gr.Textbox(label="Seed (optional)", value="")
                     reset_btn = gr.Button("Reset Environment", variant="primary")
+                    gr.Markdown("---")
+                    upload_file = gr.File(label="Upload Custom CSV / JSON", file_types=[".csv", ".json"])
 
                 with gr.Column(scale=2):
                     health_tb = gr.Textbox(label="Health Score", interactive=False)
@@ -536,6 +579,11 @@ def create_gradio_interface(env):
             reset_btn.click(
                 playground_reset,
                 inputs=[task_dd, num_rows_sl, null_pct_sl, dup_rate_sl, seed_tb],
+                outputs=[data_preview, health_tb, step_tb, result_tb, col_dd, reward_tb],
+            )
+            upload_file.upload(
+                playground_upload,
+                inputs=[upload_file],
                 outputs=[data_preview, health_tb, step_tb, result_tb, col_dd, reward_tb],
             )
             exec_btn.click(
