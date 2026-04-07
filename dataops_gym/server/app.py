@@ -128,6 +128,58 @@ def health():
     return {"status": "healthy"}
 
 
+@app.get("/metadata")
+def metadata():
+    """OpenEnv metadata endpoint."""
+    return {
+        "name": "dataops_gym",
+        "description": "AI Data Quality & Curation Environment for OpenEnv — 7 graded data engineering tasks",
+        "version": "2.0.0",
+        "author": "deepanjan1011",
+        "url": "https://huggingface.co/spaces/deepanjan1011/dataops-gym",
+        "tags": ["openenv", "data-cleaning", "data-engineering", "rl-environment"],
+    }
+
+
+@app.get("/schema")
+def schema():
+    """OpenEnv schema endpoint — returns action, observation, and state schemas."""
+    return {
+        "action": DataOpsAction.model_json_schema(),
+        "observation": DataOpsObservation.model_json_schema(),
+        "state": DataOpsState.model_json_schema(),
+    }
+
+
+@app.post("/mcp")
+def mcp_endpoint(request_body: dict = {}):
+    """Minimal MCP (Model Context Protocol) JSON-RPC endpoint."""
+    method = request_body.get("method", "")
+    rpc_id = request_body.get("id", 1)
+
+    if method == "initialize":
+        return {
+            "jsonrpc": "2.0",
+            "id": rpc_id,
+            "result": {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {"tools": {}},
+                "serverInfo": {"name": "dataops_gym", "version": "2.0.0"},
+            },
+        }
+
+    # Default: return capabilities
+    return {
+        "jsonrpc": "2.0",
+        "id": rpc_id,
+        "result": {
+            "name": "dataops_gym",
+            "version": "2.0.0",
+            "capabilities": ["reset", "step", "state", "grader"],
+        },
+    }
+
+
 @app.get("/tasks")
 def tasks():
     action_schema = DataOpsAction.model_json_schema()
