@@ -1,0 +1,327 @@
+name: dataops_gym
+version: "2.0.0"
+description: "DataOps Gym - A research-grade RL environment for training AI agents on data engineering tasks"
+author: deepanjan1011
+url: "https://huggingface.co/spaces/deepanjan1011/dataops-gym"
+tags:
+  - openenv
+  - data-cleaning
+  - data-engineering
+  - pii-redaction
+  - drift-detection
+  - adversarial
+  - multi-agent
+  - curriculum-learning
+
+tasks:
+  - id: easy
+    description: "Clean a messy product sales dataset: strip whitespace, remove duplicates, fix price strings to floats, standardize date formats to YYYY-MM-DD, lowercase categories, and impute missing values."
+    difficulty: easy
+    max_steps: 30
+    expected_score_range: [0.70, 0.95]
+
+  - id: medium
+    description: "Clean and merge two related tables (users + purchases): standardize IDs, fix dates, remove duplicates, filter active users, and perform a left-join merge."
+    difficulty: medium
+    max_steps: 30
+    expected_score_range: [0.40, 0.90]
+
+  - id: hard
+    description: "Redact all PII (emails, phone numbers, credit card numbers, SSNs) from web-scraped text documents while preserving non-PII content."
+    difficulty: hard
+    max_steps: 30
+    expected_score_range: [0.20, 1.0]
+
+  - id: outlier_detection
+    description: "Detect and handle outliers in an employee dataset. Distinguish genuine errors from legitimate extreme values using context (e.g., executive salaries)."
+    difficulty: medium-hard
+    max_steps: 30
+    expected_score_range: [0.30, 0.90]
+
+  - id: schema_migration
+    description: "Restructure a dataset: split combined columns, standardize phone numbers, separate price/currency, map status codes to strings."
+    difficulty: hard
+    max_steps: 30
+    expected_score_range: [0.20, 0.90]
+
+  - id: drift_detection
+    description: "Detect data drift in a streaming e-commerce dataset. Analyze each incoming batch against historical data and label it as 'normal' or 'drift'."
+    difficulty: hard
+    max_steps: 60
+    expected_score_range: [0.20, 1.0]
+
+  - id: poisoning_detection
+    description: "Detect poisoned samples in a sentiment classification dataset. Find label flips, subtle mislabels, and trigger phrase injections without flagging clean data."
+    difficulty: very-hard
+    max_steps: 30
+    expected_score_range: [0.10, 0.80]
+
+action_space:
+  type: discrete
+  description: "27 data operations applied to the in-memory dataset"
+  parameters:
+    action_type:
+      type: string
+      required: true
+      enum:
+        - drop_nulls
+        - impute_missing
+        - drop_duplicates
+        - drop_column
+        - rename_column
+        - cast_type
+        - apply_regex
+        - format_date
+        - strip_whitespace
+        - merge_tables
+        - filter_rows
+        - fill_value
+        - submit
+        - undo
+        - clip_outliers
+        - detect_outliers
+        - split_column
+        - map_values
+        - advance_stream
+        - analyze_distribution
+        - label_batch
+        - flag_rows
+        - inject_nulls
+        - swap_values
+        - introduce_typos
+        - flip_labels
+        - inject_pii
+    column_name:
+      type: string
+      required: false
+      description: "Target column for column-level operations"
+    strategy:
+      type: string
+      required: false
+      enum: [mean, median, mode, ffill, bfill]
+      description: "Imputation strategy for impute_missing"
+    target_type:
+      type: string
+      required: false
+      enum: [int, float, str, datetime, bool]
+      description: "Target dtype for cast_type"
+    pattern:
+      type: string
+      required: false
+      description: "Regex pattern for apply_regex"
+    replacement:
+      type: string
+      required: false
+      description: "Replacement string for apply_regex"
+    target_format:
+      type: string
+      required: false
+      description: "Date format string for format_date (e.g. %Y-%m-%d)"
+    new_name:
+      type: string
+      required: false
+      description: "New column name for rename_column"
+    right_table:
+      type: string
+      required: false
+      description: "Name of the right table for merge_tables"
+    merge_on:
+      type: string
+      required: false
+      description: "Column name(s) to merge on"
+    merge_how:
+      type: string
+      required: false
+      enum: [inner, left, right, outer]
+      description: "Merge strategy for merge_tables"
+    filter_condition:
+      type: string
+      required: false
+      description: "Pandas query string for filter_rows"
+    fill_value:
+      type: string
+      required: false
+      description: "Literal value for fill_value action"
+    clip_min:
+      type: float
+      required: false
+      description: "Minimum value for clip_outliers"
+    clip_max:
+      type: float
+      required: false
+      description: "Maximum value for clip_outliers"
+    outlier_method:
+      type: string
+      required: false
+      enum: [iqr, zscore, range]
+      description: "Outlier detection method"
+    delimiter:
+      type: string
+      required: false
+      description: "Delimiter for split_column"
+    new_columns:
+      type: array
+      required: false
+      description: "New column names after split_column"
+    max_splits:
+      type: integer
+      required: false
+      description: "Maximum number of splits for split_column"
+    value_mapping:
+      type: object
+      required: false
+      description: "Value mapping dict for map_values"
+    drift_label:
+      type: string
+      required: false
+      enum: [normal, drift]
+      description: "Label for current batch in drift detection"
+    row_indices:
+      type: array
+      required: false
+      description: "Row indices to flag as suspicious"
+    inject_count:
+      type: integer
+      required: false
+      description: "Number of values to corrupt (adversarial)"
+    typo_rate:
+      type: float
+      required: false
+      description: "Fraction of values to add typos to (adversarial)"
+
+observation_space:
+  type: structured
+  description: "Dataset statistics and metadata — agent never sees raw data, only summaries"
+  fields:
+    task_id:
+      type: string
+      description: "Current task identifier"
+    task_description:
+      type: string
+      description: "Natural language description of the task"
+    step_number:
+      type: integer
+      description: "Number of steps taken in current episode"
+    total_rows:
+      type: integer
+      description: "Current row count of the dataset"
+    total_columns:
+      type: integer
+      description: "Current column count"
+    column_summaries:
+      type: array
+      description: "Per-column statistics: dtype, null_count, unique_count, sample_values, mean/min/max"
+    preview_rows:
+      type: array
+      description: "First 5 rows as list of dicts"
+    data_health_score:
+      type: float
+      description: "Overall cleanliness score 0.0-1.0"
+    available_tables:
+      type: array
+      description: "List of table names available for merge operations"
+    last_action_result:
+      type: string
+      description: "Success or error message from last action"
+    reward:
+      type: float
+      description: "Reward received for the last action"
+    done:
+      type: boolean
+      description: "Whether the episode has ended"
+    error:
+      type: string
+      nullable: true
+      description: "Error detail if last action failed"
+    undo_available:
+      type: boolean
+      description: "Whether undo is available"
+    undo_depth:
+      type: integer
+      description: "How many undos are available"
+
+reward_function:
+  description: "Shaped reward based on data quality improvement"
+  signals:
+    - name: health_improvement
+      value: "delta_health * 2.0"
+      description: "Positive reward proportional to data quality improvement"
+    - name: step_penalty
+      value: -0.01
+      description: "Small penalty per step to encourage efficiency"
+    - name: invalid_action
+      value: -0.1
+      description: "Penalty for invalid or no-op actions"
+    - name: drop_needed_column
+      value: -0.5
+      description: "Penalty for dropping a column present in golden dataset"
+    - name: excessive_row_loss
+      value: -0.3
+      description: "Penalty when row count drops more than 20% below golden"
+    - name: submit_bonus
+      value: +0.5
+      description: "Bonus for submitting with data_health_score > 0.9"
+    - name: pii_type_redacted
+      value: +0.2
+      description: "Per PII type successfully redacted (hard task only)"
+  range: [-1.0, 1.0]
+
+endpoints:
+  base_url: "https://deepanjan1011-dataops-gym.hf.space"
+  health:
+    path: /health
+    method: GET
+  tasks:
+    path: /tasks
+    method: GET
+  reset:
+    path: /reset
+    method: POST
+    body: '{"task_id": "easy"}'
+  step:
+    path: /step
+    method: POST
+    body: "DataOpsAction JSON"
+  state:
+    path: /state
+    method: GET
+  grader:
+    path: /grader
+    method: POST
+  curriculum:
+    path: /curriculum
+    method: POST
+    body: '{"action": "start|next|status|reset"}'
+  adversarial_start:
+    path: /adversarial/start
+    method: POST
+    body: '{"num_rows": 50, "seed": 42}'
+  adversarial_step:
+    path: /adversarial/step
+    method: POST
+    body: '{"role": "corruptor|cleaner", "action": {...}}'
+  multi_agent_start:
+    path: /multi_agent/start
+    method: POST
+    body: '{"task_id": "easy", "num_agents": 3}'
+  multi_agent_step:
+    path: /multi_agent/step
+    method: POST
+    body: '{"agent_id": "agent_1", "action": {...}}'
+  multi_agent_status:
+    path: /multi_agent/status
+    method: GET
+  upload:
+    path: /upload
+    method: POST
+    body: "multipart/form-data CSV or JSON"
+  baseline:
+    path: /baseline
+    method: POST
+
+runtime:
+  language: python
+  python_version: "3.11"
+  framework: fastapi
+  port: 7860
+  dockerfile: true
