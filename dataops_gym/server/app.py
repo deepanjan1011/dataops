@@ -305,7 +305,7 @@ def tasks():
 
 
 @app.post("/reset")
-def reset(request: ResetRequest):
+def reset(request: ResetRequest = ResetRequest()):
     try:
         kwargs = {
             "num_users": request.num_users or 40,
