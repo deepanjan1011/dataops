@@ -5,6 +5,7 @@
 *.md
 !dataops_gym/**/*.md
 pyproject.toml
+uv.lock
 openenv.yaml
 inference.py
 scripts/
