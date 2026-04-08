@@ -666,7 +666,7 @@ def create_gradio_interface(env):
 
     # ── Build Gradio Blocks ─────────────────────────────────────────────────
 
-    with gr.Blocks(title="DataOps Gym", theme=gr.themes.Soft()) as demo:
+    with gr.Blocks(title="DataOps Gym", theme=gr.themes.Soft(), analytics_enabled=False) as demo:
         gr.Markdown("# DataOps Gym Dashboard")
         gr.Markdown("Interactive RL environment for training AI agents on data engineering tasks.")
 
@@ -878,4 +878,5 @@ def create_gradio_interface(env):
                 outputs=[ma_assignments_tb, ma_coord_tb, ma_conflicts_tb, ma_steps_tb, ma_agent_dd],
             )
 
+    demo.show_api = False
     return demo
