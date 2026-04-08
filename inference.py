@@ -224,7 +224,7 @@ def run_medium() -> float:
 
     step_count = 0
     rewards: List[float] = []
-    score = 0.0
+    score = 0.0001
     success = False
 
     try:
@@ -248,9 +248,9 @@ def run_medium() -> float:
                 break
 
         score = _env_grade()
-        success = score > 0.0
+        success = score > 0.0001
     except Exception:
-        score = 0.0
+        score = 0.0001
     finally:
         log_end(success=success, steps=step_count, score=score, rewards=rewards)
 
@@ -381,7 +381,7 @@ def run_schema_migration() -> float:
     # Execute
     step_count = 0
     rewards: List[float] = []
-    score = 0.0
+    score = 0.0001
     success = False
 
     try:
@@ -400,9 +400,9 @@ def run_schema_migration() -> float:
             if done:
                 break
         score = _env_grade()
-        success = score > 0.0
+        success = score > 0.0001
     except Exception:
-        score = 0.0
+        score = 0.0001
     finally:
         log_end(success=success, steps=step_count, score=score, rewards=rewards)
 
@@ -466,7 +466,7 @@ When advance_stream says "no more batches" or similar, respond with: {"action_ty
 
     step_count = 0
     rewards: List[float] = []
-    score = 0.0
+    score = 0.0001
     success = False
 
     # Track state machine: baseline → (advance → analyze → label) loop → submit
@@ -568,9 +568,9 @@ When advance_stream says "no more batches" or similar, respond with: {"action_ty
                      done=True, error=obs.get("error"))
 
         score = _env_grade()
-        success = score > 0.0
+        success = score > 0.0001
     except Exception:
-        score = 0.0
+        score = 0.0001
     finally:
         log_end(success=success, steps=step_count, score=score, rewards=rewards)
 
@@ -589,7 +589,7 @@ def run_poisoning_detection() -> float:
 
     step_count = 0
     rewards: List[float] = []
-    score = 0.0
+    score = 0.0001
     success = False
 
     try:
@@ -696,9 +696,9 @@ Use 0-based indices (id - 1)."""
                  done=True, error=obs.get("error"))
 
         score = _env_grade()
-        success = score > 0.0
+        success = score > 0.0001
     except Exception:
-        score = 0.0
+        score = 0.0001
     finally:
         log_end(success=success, steps=step_count, score=score, rewards=rewards)
 
@@ -726,7 +726,7 @@ def run_task(task_id: str) -> float:
     runner = TASK_RUNNERS.get(task_id)
     if runner is None:
         print(f"ERROR: Unknown task '{task_id}'")
-        return 0.0
+        return 0.0001
     return runner()
 
 
@@ -741,7 +741,7 @@ def run_all_tasks() -> dict:
             score = run_task(task_id)
             scores[task_id] = score
         except Exception:
-            scores[task_id] = 0.0001
+            scores[task_id] = 0.0001  # already correct
 
     return scores
 
