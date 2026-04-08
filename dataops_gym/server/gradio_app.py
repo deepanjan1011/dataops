@@ -306,9 +306,33 @@ def create_gradio_interface(env):
 
     # ── Tab 3: Curriculum ───────────────────────────────────────────────────
 
+    # Track whether curriculum is running on a custom dataset
+    _curriculum_custom = {"active": False}
+
+    def _compute_generic_score(df):
+        """Generic quality score for custom datasets."""
+        if df is None or df.empty:
+            return 0.0
+        total_cells = df.shape[0] * df.shape[1]
+        null_score = 1.0 - (df.isnull().sum().sum() / max(total_cells, 1))
+        dup_score = 1.0 - (df.duplicated().sum() / max(len(df), 1))
+        ws_score = 1.0
+        str_cols = df.select_dtypes(include=["object"]).columns
+        if len(str_cols) > 0:
+            ws_issues = 0
+            ws_total = 0
+            for col in str_cols:
+                non_null = df[col].dropna()
+                ws_total += len(non_null)
+                ws_issues += (non_null != non_null.str.strip()).sum()
+            if ws_total > 0:
+                ws_score = 1.0 - (ws_issues / ws_total)
+        return round(null_score * 0.4 + dup_score * 0.35 + ws_score * 0.25, 4)
+
     def curriculum_start():
         global _curriculum_scores
         _curriculum_scores = []
+        _curriculum_custom["active"] = False
         from dataops_gym.server.app import curriculum_state, CURRICULUM_LEVELS
         import dataops_gym.server.app as app_module
 
@@ -323,7 +347,41 @@ def create_gradio_interface(env):
         cs = app_module.curriculum_state
         return (
             f"Level: {cs.current_level}",
-            f"Task: {cs.current_task}",
+            f"Task: {cs.current_task} (demo)",
+            f"Episodes: {cs.total_episodes}",
+            f"Avg Score: {cs.average_score:.4f}",
+            _make_curriculum_chart(),
+        )
+
+    def curriculum_start_custom():
+        global _curriculum_scores
+        _curriculum_scores = []
+        _curriculum_custom["active"] = True
+        import dataops_gym.server.app as app_module
+
+        df = env.dataframes.get("main", pd.DataFrame())
+        if df is None or df.empty:
+            return (
+                "N/A",
+                "No dataset loaded — upload a CSV in the Playground tab first.",
+                "Episodes: 0",
+                "Avg Score: 0.0000",
+                _make_curriculum_chart(),
+            )
+
+        app_module.curriculum_state = type(app_module.curriculum_state)()
+        app_module.curriculum_state.current_task = "custom"
+        app_module.curriculum_state.total_episodes = 1
+
+        cs = app_module.curriculum_state
+        score = _compute_generic_score(df)
+        cs.history.append({"level": 1, "task": "custom", "score": score, "episode": 1})
+        _curriculum_scores.append({"level": 1, "score": score, "episode": 1})
+        cs.average_score = score
+
+        return (
+            f"Level: {cs.current_level}",
+            "Task: custom",
             f"Episodes: {cs.total_episodes}",
             f"Avg Score: {cs.average_score:.4f}",
             _make_curriculum_chart(),
@@ -331,14 +389,20 @@ def create_gradio_interface(env):
 
     def curriculum_next():
         import dataops_gym.server.app as app_module
-        from dataops_gym.server.app import CURRICULUM_LEVELS
 
         cs = app_module.curriculum_state
-        score = grade_by_criteria(
-            env.current_task,
-            env.dataframes.get("main", pd.DataFrame()),
-            env.grading_criteria,
-        )
+
+        if _curriculum_custom["active"]:
+            # Custom dataset: grade with generic scorer, stay on same data
+            df = env.dataframes.get("main", pd.DataFrame())
+            score = _compute_generic_score(df)
+        else:
+            from dataops_gym.server.app import CURRICULUM_LEVELS
+            score = grade_by_criteria(
+                env.current_task,
+                env.dataframes.get("main", pd.DataFrame()),
+                env.grading_criteria,
+            )
 
         cs.history.append({
             "level": cs.current_level,
@@ -356,16 +420,23 @@ def create_gradio_interface(env):
         elif score < 0.40:
             cs.current_level = max(1, cs.current_level - 1)
 
-        params = dict(CURRICULUM_LEVELS[cs.current_level])
-        task_id = params.pop("task_id")
-        cs.current_task = task_id
-        cs.current_params = {"task_id": task_id, **params}
-        env.reset(task_id, seed=random.randint(1, 99999), **params)
-        cs.total_episodes += 1
+        if _curriculum_custom["active"]:
+            # Stay on custom data, just bump episode
+            cs.total_episodes += 1
+            task_label = "Task: custom"
+        else:
+            from dataops_gym.server.app import CURRICULUM_LEVELS
+            params = dict(CURRICULUM_LEVELS[cs.current_level])
+            task_id = params.pop("task_id")
+            cs.current_task = task_id
+            cs.current_params = {"task_id": task_id, **params}
+            env.reset(task_id, seed=random.randint(1, 99999), **params)
+            cs.total_episodes += 1
+            task_label = f"Task: {cs.current_task} (demo)"
 
         return (
             f"Level: {cs.current_level}",
-            f"Task: {cs.current_task}",
+            task_label,
             f"Episodes: {cs.total_episodes}",
             f"Avg Score: {cs.average_score:.4f}",
             _make_curriculum_chart(),
@@ -373,17 +444,12 @@ def create_gradio_interface(env):
 
     # ── Tab 4: Adversarial ──────────────────────────────────────────────────
 
-    def adversarial_start(num_rows, seed_val):
+    def _adversarial_init(base_df):
+        """Shared init for adversarial mode — sets up state from a given dataframe."""
         import dataops_gym.server.app as app_module
-        from dataops_gym.tasks.generators import generate_easy_dataset
         import uuid as _uuid
 
-        seed = int(seed_val) if seed_val else None
-        dirty_df, _ = generate_easy_dataset(
-            seed=seed, num_rows=int(num_rows),
-            null_percentage=0.0, duplicate_rate=0.0,
-        )
-        env.dataframes = {"main": dirty_df}
+        env.dataframes = {"main": base_df.copy()}
         env.current_task = "adversarial"
         env.step_count = 0
         env.done = False
@@ -391,7 +457,7 @@ def create_gradio_interface(env):
         env.cumulative_reward = 0.0
 
         from dataops_gym.models import AdversarialState
-        app_module.adversarial_clean_snapshot = dirty_df.copy()
+        app_module.adversarial_clean_snapshot = base_df.copy()
         app_module.adversarial_state = AdversarialState()
 
         st = app_module.adversarial_state
@@ -402,6 +468,26 @@ def create_gradio_interface(env):
             f"Corruptor: {st.corruptor_score:.3f}  |  Cleaner: {st.cleaner_score:.3f}",
             df.head(20),
         )
+
+    def adversarial_start(num_rows, seed_val):
+        from dataops_gym.tasks.generators import generate_easy_dataset
+        seed = int(seed_val) if seed_val else None
+        dirty_df, _ = generate_easy_dataset(
+            seed=seed, num_rows=int(num_rows),
+            null_percentage=0.0, duplicate_rate=0.0,
+        )
+        return _adversarial_init(dirty_df)
+
+    def adversarial_use_current():
+        df = env.dataframes.get("main", pd.DataFrame())
+        if df is None or df.empty:
+            return (
+                "No dataset loaded",
+                "Round: 0",
+                "Upload a CSV in the Playground tab first.",
+                pd.DataFrame(),
+            )
+        return _adversarial_init(df)
 
     def adversarial_corrupt(action_type, column_name, inject_count):
         import dataops_gym.server.app as app_module
@@ -659,7 +745,8 @@ def create_gradio_interface(env):
 
         with gr.Tab("Curriculum"):
             with gr.Row():
-                cur_start_btn = gr.Button("Start Curriculum", variant="primary")
+                cur_start_btn = gr.Button("Start Curriculum (Demo Tasks)", variant="primary")
+                cur_start_custom_btn = gr.Button("Use Current Dataset (from Playground)", variant="secondary")
                 cur_next_btn = gr.Button("Next Episode")
             with gr.Row():
                 cur_level_tb = gr.Textbox(label="Level", interactive=False)
@@ -669,6 +756,10 @@ def create_gradio_interface(env):
             cur_chart_img = gr.Image(label="Performance History")
             cur_start_btn.click(
                 curriculum_start,
+                outputs=[cur_level_tb, cur_task_tb, cur_episodes_tb, cur_avg_tb, cur_chart_img],
+            )
+            cur_start_custom_btn.click(
+                curriculum_start_custom,
                 outputs=[cur_level_tb, cur_task_tb, cur_episodes_tb, cur_avg_tb, cur_chart_img],
             )
             cur_next_btn.click(
@@ -681,7 +772,9 @@ def create_gradio_interface(env):
             with gr.Row():
                 adv_rows_sl = gr.Slider(10, 200, value=30, step=5, label="Rows")
                 adv_seed_tb = gr.Textbox(label="Seed", value="42")
-                adv_start_btn = gr.Button("Start Adversarial", variant="primary")
+            with gr.Row():
+                adv_start_btn = gr.Button("Start Adversarial (Demo Data)", variant="primary")
+                adv_use_current_btn = gr.Button("Use Current Dataset (from Playground)", variant="secondary")
             with gr.Row():
                 adv_phase_tb = gr.Textbox(label="Phase", interactive=False)
                 adv_round_tb = gr.Textbox(label="Round", interactive=False)
@@ -705,6 +798,10 @@ def create_gradio_interface(env):
             adv_start_btn.click(
                 adversarial_start,
                 inputs=[adv_rows_sl, adv_seed_tb],
+                outputs=[adv_phase_tb, adv_round_tb, adv_scores_tb, adv_preview],
+            )
+            adv_use_current_btn.click(
+                adversarial_use_current,
                 outputs=[adv_phase_tb, adv_round_tb, adv_scores_tb, adv_preview],
             )
             cor_btn.click(
