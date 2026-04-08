@@ -713,7 +713,10 @@ def create_gradio_interface(env):
         with gr.Tab("Multi-Agent"):
             gr.Markdown("### Collaborative multi-agent data cleaning")
             with gr.Row():
-                ma_task_dd = gr.Dropdown(choices=TASK_IDS, value="easy", label="Task")
+                ma_task_dd = gr.Dropdown(
+                    choices=TASK_IDS, value="easy", label="Task",
+                    allow_custom_value=True, elem_id="ma_task",
+                )
                 ma_agents_sl = gr.Slider(2, 5, value=3, step=1, label="Agents")
                 ma_seed_tb = gr.Textbox(label="Seed", value="42")
                 ma_start_btn = gr.Button("Start Multi-Agent", variant="primary")
@@ -725,8 +728,11 @@ def create_gradio_interface(env):
 
             gr.Markdown("#### Agent Action")
             with gr.Row():
-                ma_agent_dd = gr.Dropdown(choices=[], label="Agent", allow_custom_value=True)
-                ma_action_dd = gr.Dropdown(choices=CLEANING_ACTIONS[:13], value="drop_nulls", label="Action")
+                ma_agent_dd = gr.Dropdown(choices=[], label="Agent", allow_custom_value=True, elem_id="ma_agent")
+                ma_action_dd = gr.Dropdown(
+                    choices=CLEANING_ACTIONS[:13], value="drop_nulls", label="Action",
+                    elem_id="ma_action",
+                )
                 ma_col_tb = gr.Textbox(label="Column")
                 ma_step_btn = gr.Button("Execute", variant="primary")
 
