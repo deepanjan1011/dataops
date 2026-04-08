@@ -1,0 +1,14 @@
+# Ignore files not needed in Docker build
+.git
+.env
+*.pdf
+*.md
+!dataops_gym/**/*.md
+pyproject.toml
+openenv.yaml
+inference.py
+scripts/
+server/
+__pycache__
+*.pyc
+.pytest_cache
