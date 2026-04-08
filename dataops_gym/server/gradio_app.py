@@ -247,14 +247,53 @@ def create_gradio_interface(env):
 
     def playground_grade():
         try:
-            score = grade_by_criteria(
-                env.current_task,
-                env.dataframes.get("main", pd.DataFrame()),
-                env.grading_criteria,
-            )
-            return f"Score: {score:.4f}"
+            df = env.dataframes.get("main", pd.DataFrame())
+            if df is None or df.empty:
+                return "Score: 0.0000 (no data loaded)"
+
+            # If we have grading criteria (from a task reset), use them
+            if env.grading_criteria:
+                score = grade_by_criteria(
+                    env.current_task,
+                    df,
+                    env.grading_criteria,
+                )
+                return f"Score: {score:.4f}"
+
+            # For custom uploads or when no criteria exist, compute a generic quality score
+            total_cells = df.shape[0] * df.shape[1]
+            null_score = 1.0 - (df.isnull().sum().sum() / max(total_cells, 1))
+            dup_score = 1.0 - (df.duplicated().sum() / max(len(df), 1))
+            # Check for whitespace issues in string columns
+            ws_score = 1.0
+            str_cols = df.select_dtypes(include=["object"]).columns
+            if len(str_cols) > 0:
+                ws_issues = 0
+                ws_total = 0
+                for col in str_cols:
+                    non_null = df[col].dropna()
+                    ws_total += len(non_null)
+                    ws_issues += (non_null != non_null.str.strip()).sum()
+                if ws_total > 0:
+                    ws_score = 1.0 - (ws_issues / ws_total)
+
+            score = round(null_score * 0.4 + dup_score * 0.35 + ws_score * 0.25, 4)
+            return f"Score: {score:.4f} (generic quality — reset with a task for task-specific grading)"
         except Exception as e:
             return f"Grading error: {e}"
+
+    def playground_download():
+        """Download current dataframe as CSV."""
+        try:
+            df = env.dataframes.get("main", pd.DataFrame())
+            if df is None or df.empty:
+                return None
+            import tempfile
+            tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".csv", prefix="dataops_cleaned_")
+            df.to_csv(tmp.name, index=False)
+            return tmp.name
+        except Exception:
+            return None
 
     # ── Tab 2: Reward Visualization ─────────────────────────────────────────
 
@@ -575,6 +614,9 @@ def create_gradio_interface(env):
                 exec_btn = gr.Button("Execute Action", variant="primary")
                 grade_btn = gr.Button("Grade Episode")
                 grade_result = gr.Textbox(label="Grade", interactive=False)
+            with gr.Row():
+                download_btn = gr.Button("Download Cleaned CSV", variant="secondary")
+                download_file = gr.File(label="Download", interactive=False)
 
             reset_btn.click(
                 playground_reset,
@@ -594,6 +636,7 @@ def create_gradio_interface(env):
                 outputs=[data_preview, health_tb, step_tb, result_tb, col_dd, reward_tb],
             )
             grade_btn.click(playground_grade, outputs=[grade_result])
+            download_btn.click(playground_download, outputs=[download_file])
 
         with gr.Tab("Reward Visualization"):
             gr.Markdown("### Charts update after actions in the Playground tab")
