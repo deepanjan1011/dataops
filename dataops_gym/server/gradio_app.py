@@ -666,51 +666,63 @@ def create_gradio_interface(env):
 
     # ── Build Gradio Blocks ─────────────────────────────────────────────────
 
-    with gr.Blocks(title="DataOps Gym") as demo:
+    with gr.Blocks(title="DataOps Gym", theme=gr.themes.Soft()) as demo:
         gr.Markdown("# DataOps Gym Dashboard")
         gr.Markdown("Interactive RL environment for training AI agents on data engineering tasks.")
 
         with gr.Tab("Interactive Playground"):
-            with gr.Row():
-                with gr.Column(scale=1):
-                    task_dd = gr.Dropdown(choices=TASK_IDS, value="easy", label="Task")
-                    num_rows_sl = gr.Slider(10, 500, value=50, step=10, label="Rows")
-                    null_pct_sl = gr.Slider(0.0, 0.5, value=0.08, step=0.01, label="Null %")
-                    dup_rate_sl = gr.Slider(0.0, 0.3, value=0.10, step=0.01, label="Duplicate Rate")
-                    seed_tb = gr.Textbox(label="Seed (optional)", value="")
-                    reset_btn = gr.Button("Reset Environment", variant="primary")
-                    gr.Markdown("---")
-                    upload_file = gr.File(label="Upload Custom CSV / JSON", file_types=[".csv", ".json"])
-
+            # ── Top: Config + Status side by side ──
+            with gr.Row(equal_height=True):
                 with gr.Column(scale=2):
-                    health_tb = gr.Textbox(label="Health Score", interactive=False)
-                    step_tb = gr.Textbox(label="Step", interactive=False)
+                    gr.Markdown("#### Environment Setup")
+                    with gr.Row():
+                        task_dd = gr.Dropdown(choices=TASK_IDS, value="easy", label="Task", scale=2)
+                        seed_tb = gr.Textbox(label="Seed (optional)", value="", scale=1)
+                    with gr.Row():
+                        num_rows_sl = gr.Slider(10, 500, value=50, step=10, label="Rows")
+                        null_pct_sl = gr.Slider(0.0, 0.5, value=0.08, step=0.01, label="Null %")
+                        dup_rate_sl = gr.Slider(0.0, 0.3, value=0.10, step=0.01, label="Duplicate Rate")
+                    with gr.Row():
+                        reset_btn = gr.Button("Reset Environment", variant="primary", scale=2)
+                        upload_file = gr.File(
+                            label="Upload Custom CSV / JSON", file_types=[".csv", ".json"],
+                            scale=1, height=80,
+                        )
+                with gr.Column(scale=1):
+                    gr.Markdown("#### Status")
+                    with gr.Row():
+                        health_tb = gr.Textbox(label="Health", interactive=False)
+                        step_tb = gr.Textbox(label="Step", interactive=False)
                     reward_tb = gr.Textbox(label="Cumulative Reward", value="0.0", interactive=False)
-                    result_tb = gr.Textbox(label="Last Action Result", interactive=False)
+                    result_tb = gr.Textbox(label="Last Action Result", interactive=False, lines=1)
 
+            # ── Data Preview ──
             data_preview = gr.Dataframe(label="Data Preview (first 20 rows)", interactive=False)
 
-            gr.Markdown("### Execute Action")
+            # ── Action Panel ──
+            gr.Markdown("#### Execute Action")
             with gr.Row():
-                action_dd = gr.Dropdown(choices=CLEANING_ACTIONS, value="drop_nulls", label="Action")
-                col_dd = gr.Dropdown(choices=[], label="Column", allow_custom_value=True)
+                action_dd = gr.Dropdown(choices=CLEANING_ACTIONS, value="drop_nulls", label="Action", scale=2)
+                col_dd = gr.Dropdown(choices=[], label="Column", allow_custom_value=True, scale=2)
+                strategy_dd = gr.Dropdown(choices=STRATEGIES, label="Strategy", allow_custom_value=True, scale=1)
+                target_type_dd = gr.Dropdown(choices=TARGET_TYPES, label="Target Type", allow_custom_value=True, scale=1)
+            with gr.Accordion("Advanced Parameters", open=False):
+                with gr.Row():
+                    pattern_tb = gr.Textbox(label="Pattern")
+                    replacement_tb = gr.Textbox(label="Replacement")
+                    new_name_tb = gr.Textbox(label="New Name")
+                    fill_val_tb = gr.Textbox(label="Fill Value")
+                with gr.Row():
+                    filter_cond_tb = gr.Textbox(label="Filter Condition")
+                    drift_label_dd = gr.Dropdown(choices=["normal", "drift"], label="Drift Label", allow_custom_value=True)
+                    row_indices_tb = gr.Textbox(label="Row Indices (comma-sep)")
             with gr.Row():
-                strategy_dd = gr.Dropdown(choices=STRATEGIES, label="Strategy", allow_custom_value=True)
-                target_type_dd = gr.Dropdown(choices=TARGET_TYPES, label="Target Type", allow_custom_value=True)
-                pattern_tb = gr.Textbox(label="Pattern")
-                replacement_tb = gr.Textbox(label="Replacement")
+                exec_btn = gr.Button("Execute Action", variant="primary", scale=2)
+                grade_btn = gr.Button("Grade Episode", scale=1)
+                download_btn = gr.Button("Download Cleaned CSV", variant="secondary", scale=1)
             with gr.Row():
-                new_name_tb = gr.Textbox(label="New Name")
-                fill_val_tb = gr.Textbox(label="Fill Value")
-                filter_cond_tb = gr.Textbox(label="Filter Condition")
-                drift_label_dd = gr.Dropdown(choices=["normal", "drift"], label="Drift Label", allow_custom_value=True)
-                row_indices_tb = gr.Textbox(label="Row Indices (comma-sep)")
-            with gr.Row():
-                exec_btn = gr.Button("Execute Action", variant="primary")
-                grade_btn = gr.Button("Grade Episode")
-                grade_result = gr.Textbox(label="Grade", interactive=False)
-            download_file = gr.File(label="Download Cleaned CSV", interactive=False, visible=False)
-            download_btn = gr.Button("Download Cleaned CSV", variant="secondary")
+                grade_result = gr.Textbox(label="Grade", interactive=False, scale=2)
+                download_file = gr.File(label="Download Cleaned CSV", interactive=False, visible=False, scale=1)
 
             reset_btn.click(
                 playground_reset,
@@ -733,10 +745,11 @@ def create_gradio_interface(env):
             download_btn.click(playground_download, outputs=[download_file])
 
         with gr.Tab("Reward Visualization"):
-            gr.Markdown("### Charts update after actions in the Playground tab")
+            gr.Markdown("#### Charts update after actions in the Playground tab")
             refresh_btn = gr.Button("Refresh Charts", variant="primary")
-            reward_line_img = gr.Image(label="Cumulative Reward")
-            action_bar_img = gr.Image(label="Reward by Action Type")
+            with gr.Row():
+                reward_line_img = gr.Image(label="Cumulative Reward")
+                action_bar_img = gr.Image(label="Reward by Action Type")
             health_heatmap_img = gr.Image(label="Column Health Heatmap")
             refresh_btn.click(
                 refresh_charts,
@@ -768,32 +781,37 @@ def create_gradio_interface(env):
             )
 
         with gr.Tab("Adversarial"):
-            gr.Markdown("### Two-player adversarial data corruption game")
+            gr.Markdown("#### Two-player adversarial data corruption game")
             with gr.Row():
-                adv_rows_sl = gr.Slider(10, 200, value=30, step=5, label="Rows")
-                adv_seed_tb = gr.Textbox(label="Seed", value="42")
-            with gr.Row():
-                adv_start_btn = gr.Button("Start Adversarial (Demo Data)", variant="primary")
-                adv_use_current_btn = gr.Button("Use Current Dataset (from Playground)", variant="secondary")
+                with gr.Column(scale=2):
+                    with gr.Row():
+                        adv_rows_sl = gr.Slider(10, 200, value=30, step=5, label="Rows")
+                        adv_seed_tb = gr.Textbox(label="Seed", value="42")
+                with gr.Column(scale=2):
+                    with gr.Row():
+                        adv_start_btn = gr.Button("Start Adversarial (Demo Data)", variant="primary")
+                        adv_use_current_btn = gr.Button("Use Current Dataset (from Playground)", variant="secondary")
             with gr.Row():
                 adv_phase_tb = gr.Textbox(label="Phase", interactive=False)
                 adv_round_tb = gr.Textbox(label="Round", interactive=False)
                 adv_scores_tb = gr.Textbox(label="Scores", interactive=False)
             adv_preview = gr.Dataframe(label="Data Preview", interactive=False)
 
-            gr.Markdown("#### Corruptor Panel")
-            with gr.Row():
-                cor_action_dd = gr.Dropdown(choices=CORRUPTOR_ACTIONS, value="inject_nulls", label="Corruption")
-                cor_col_tb = gr.Textbox(label="Column")
-                cor_count_tb = gr.Textbox(label="Inject Count", value="5")
-                cor_btn = gr.Button("Corrupt!", variant="stop")
-
-            gr.Markdown("#### Cleaner Panel")
-            with gr.Row():
-                cln_action_dd = gr.Dropdown(choices=CLEANING_ACTIONS[:13], value="impute_missing", label="Clean Action")
-                cln_col_tb = gr.Textbox(label="Column")
-                cln_strategy_dd = gr.Dropdown(choices=STRATEGIES, label="Strategy", value="mode")
-                cln_btn = gr.Button("Clean!", variant="primary")
+            with gr.Row(equal_height=True):
+                with gr.Column():
+                    gr.Markdown("#### Corruptor Panel")
+                    with gr.Row():
+                        cor_action_dd = gr.Dropdown(choices=CORRUPTOR_ACTIONS, value="inject_nulls", label="Corruption")
+                        cor_col_tb = gr.Textbox(label="Column")
+                        cor_count_tb = gr.Textbox(label="Inject Count", value="5")
+                    cor_btn = gr.Button("Corrupt!", variant="stop")
+                with gr.Column():
+                    gr.Markdown("#### Cleaner Panel")
+                    with gr.Row():
+                        cln_action_dd = gr.Dropdown(choices=CLEANING_ACTIONS[:13], value="impute_missing", label="Clean Action")
+                        cln_col_tb = gr.Textbox(label="Column")
+                        cln_strategy_dd = gr.Dropdown(choices=STRATEGIES, label="Strategy", value="mode")
+                    cln_btn = gr.Button("Clean!", variant="primary")
 
             adv_start_btn.click(
                 adversarial_start,
@@ -816,32 +834,33 @@ def create_gradio_interface(env):
             )
 
         with gr.Tab("Multi-Agent"):
-            gr.Markdown("### Collaborative multi-agent data cleaning")
+            gr.Markdown("#### Collaborative multi-agent data cleaning")
             with gr.Row():
                 ma_task_dd = gr.Dropdown(
                     choices=TASK_IDS, value="easy", label="Task",
-                    allow_custom_value=True, elem_id="ma_task",
+                    allow_custom_value=True, elem_id="ma_task", scale=2,
                 )
-                ma_agents_sl = gr.Slider(2, 5, value=3, step=1, label="Agents")
-                ma_seed_tb = gr.Textbox(label="Seed", value="42")
+                ma_agents_sl = gr.Slider(2, 5, value=3, step=1, label="Agents", scale=1)
+                ma_seed_tb = gr.Textbox(label="Seed", value="42", scale=1)
             with gr.Row():
                 ma_start_btn = gr.Button("Start Multi-Agent", variant="primary")
                 ma_use_current_btn = gr.Button("Use Current Dataset (from Playground)", variant="secondary")
-            with gr.Row():
-                ma_assignments_tb = gr.Textbox(label="Agent Assignments", lines=5, interactive=False)
-                ma_coord_tb = gr.Textbox(label="Coordination Score", interactive=False)
-            ma_conflicts_tb = gr.Textbox(label="Conflict Log", lines=4, interactive=False)
-            ma_steps_tb = gr.Textbox(label="Total Steps", interactive=False)
+            with gr.Row(equal_height=True):
+                ma_assignments_tb = gr.Textbox(label="Agent Assignments", lines=4, interactive=False, scale=3)
+                with gr.Column(scale=1):
+                    ma_coord_tb = gr.Textbox(label="Coordination Score", interactive=False)
+                    ma_steps_tb = gr.Textbox(label="Total Steps", interactive=False)
+            ma_conflicts_tb = gr.Textbox(label="Conflict Log", lines=3, interactive=False)
 
             gr.Markdown("#### Agent Action")
             with gr.Row():
-                ma_agent_dd = gr.Dropdown(choices=[], label="Agent", allow_custom_value=True, elem_id="ma_agent")
+                ma_agent_dd = gr.Dropdown(choices=[], label="Agent", allow_custom_value=True, elem_id="ma_agent", scale=1)
                 ma_action_dd = gr.Dropdown(
                     choices=CLEANING_ACTIONS[:13], value="drop_nulls", label="Action",
-                    elem_id="ma_action",
+                    elem_id="ma_action", scale=1,
                 )
-                ma_col_tb = gr.Textbox(label="Column")
-                ma_step_btn = gr.Button("Execute", variant="primary")
+                ma_col_tb = gr.Textbox(label="Column", scale=1)
+                ma_step_btn = gr.Button("Execute", variant="primary", scale=1)
 
             ma_start_btn.click(
                 multi_agent_start,
