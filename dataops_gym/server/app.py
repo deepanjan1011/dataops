@@ -152,8 +152,10 @@ def schema():
 
 
 @app.post("/mcp")
-def mcp_endpoint(request_body: dict = {}):
+def mcp_endpoint(request_body: dict = None):
     """Minimal MCP (Model Context Protocol) JSON-RPC endpoint."""
+    if request_body is None:
+        request_body = {}
     method = request_body.get("method", "")
     rpc_id = request_body.get("id", 1)
 
@@ -829,4 +831,8 @@ try:
     app = gr.mount_gradio_app(app, demo, path="/")
 except ImportError:
     # Gradio not installed — API-only mode
+    pass
+except Exception as e:
+    # Gradio installed but dashboard failed to build — log and continue in API-only mode
+    logger.warning(f"Gradio dashboard failed to load: {e}")
     pass
