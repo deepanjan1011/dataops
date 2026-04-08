@@ -7,6 +7,15 @@ import re
 import numpy as np
 import pandas as pd
 
+# Competition requires scores strictly between 0 and 1 (exclusive)
+_SCORE_MIN = 0.0001
+_SCORE_MAX = 0.9999
+
+
+def _clamp_score(score: float) -> float:
+    """Clamp score to strictly between 0 and 1 (exclusive)."""
+    return float(np.clip(score, _SCORE_MIN, _SCORE_MAX))
+
 
 def grade_by_criteria(task_id: str, final_df: pd.DataFrame, criteria: dict) -> float:
     """
@@ -16,9 +25,9 @@ def grade_by_criteria(task_id: str, final_df: pd.DataFrame, criteria: dict) -> f
     """
     try:
         if final_df is None or final_df.empty:
-            return 0.0
+            return _SCORE_MIN
         if not criteria:
-            return 0.0
+            return _SCORE_MIN
 
         scores = []
 
@@ -241,8 +250,8 @@ def grade_by_criteria(task_id: str, final_df: pd.DataFrame, criteria: dict) -> f
                 original_count = criteria.get("original_row_count", 0)
                 if len(final_df) < original_count:
                     removed_count = original_count - len(final_df)
-                    return round(min(removed_count / max(len(poisoned), 1), 1.0) * 0.5, 4)
-                return 0.0
+                    return _clamp_score(round(min(removed_count / max(len(poisoned), 1), 1.0) * 0.5, 4))
+                return _SCORE_MIN
 
             tp = len(flagged & poisoned)
             fp = len(flagged - poisoned)
@@ -255,14 +264,14 @@ def grade_by_criteria(task_id: str, final_df: pd.DataFrame, criteria: dict) -> f
             clean_damage = fp / max(len(criteria.get("clean_indices", [])), 1)
 
             score = f1 * 0.7 + (1.0 - clean_damage) * 0.3
-            return round(max(0.0, min(1.0, score)), 4)
+            return _clamp_score(round(score, 4))
 
         elif task_id == "drift_detection":
             predictions = criteria.get("batch_predictions", [])
             ground_truth = criteria.get("batch_labels", [])
 
             if not predictions:
-                return 0.0
+                return _SCORE_MIN
 
             tp = fp = fn = tn = 0
             for pred, actual in zip(predictions, ground_truth[:len(predictions)]):
@@ -284,13 +293,13 @@ def grade_by_criteria(task_id: str, final_df: pd.DataFrame, criteria: dict) -> f
             coverage = len(predictions) / max(len(ground_truth), 1)
 
             score = f1 * 0.7 + coverage * 0.3
-            return round(max(0.0, min(1.0, score)), 4)
+            return _clamp_score(round(score, 4))
 
         elif task_id == "custom":
             # Grade based on whether detected issues were fixed
             issues = criteria.get("detected_issues", {})
             if not issues:
-                return 1.0  # nothing to fix → perfect
+                return _SCORE_MAX  # nothing to fix → near perfect
 
             checks = []
 
@@ -339,17 +348,17 @@ def grade_by_criteria(task_id: str, final_df: pd.DataFrame, criteria: dict) -> f
                 checks.append(("casing", casing_score / len(casing_cols), 0.15))
 
             if not checks:
-                return 0.5  # issues detected but none we can grade → neutral
+                return 0.5  # issues detected but none we can grade
 
             total_w = sum(w for _, _, w in checks)
             scores = [(s, w / total_w) for _, s, w in checks]  # renormalize weights
             total = sum(s * w for s, w in scores)
-            return round(float(np.clip(total, 0.0, 1.0)), 4)
+            return _clamp_score(round(float(total), 4))
 
         total = sum(score * weight for _, score, weight in scores)
-        return round(float(np.clip(total, 0.0, 1.0)), 4)
+        return _clamp_score(round(float(total), 4))
     except Exception:
-        return 0.0
+        return _SCORE_MIN
 
 
 def grade(task_id: str, final_df: pd.DataFrame, golden_df: pd.DataFrame) -> float:
@@ -364,9 +373,9 @@ def grade(task_id: str, final_df: pd.DataFrame, golden_df: pd.DataFrame) -> floa
             score = _grade_hard(final_df, golden_df)
         else:
             score = _grade_tabular(final_df, golden_df)
-        return round(float(np.clip(score, 0.0, 1.0)), 4)
+        return _clamp_score(round(float(score), 4))
     except Exception:
-        return 0.0
+        return _SCORE_MIN
 
 
 # ─── TABULAR GRADER (easy + medium) ──────────────────────────────────────────
