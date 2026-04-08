@@ -585,8 +585,8 @@ def execute_corruption(action: DataOpsAction, df: pd.DataFrame) -> str:
         return f"Introduced typos in {action.column_name}"
 
     elif action.action_type == "swap_values":
+        count = min(action.inject_count or 5, len(df) // 2)
         if action.column_name and action.column_name in df.columns:
-            count = min(action.inject_count or 5, len(df) // 2)
             for _ in range(count):
                 i, j = random.sample(range(len(df)), 2)
                 df.at[i, action.column_name], df.at[j, action.column_name] = \
@@ -594,8 +594,8 @@ def execute_corruption(action: DataOpsAction, df: pd.DataFrame) -> str:
         return f"Swapped {count} pairs in {action.column_name}"
 
     elif action.action_type == "flip_labels":
+        count = min(action.inject_count or 5, len(df))
         if action.column_name and action.column_name in df.columns:
-            count = min(action.inject_count or 5, len(df))
             indices = np.random.choice(len(df), size=count, replace=False)
             unique_vals = df[action.column_name].dropna().unique().tolist()
             if len(unique_vals) > 1:
@@ -607,8 +607,8 @@ def execute_corruption(action: DataOpsAction, df: pd.DataFrame) -> str:
         return f"Flipped {count} labels in {action.column_name}"
 
     elif action.action_type == "inject_pii":
+        count = min(action.inject_count or 3, len(df))
         if action.column_name and action.column_name in df.columns:
-            count = min(action.inject_count or 3, len(df))
             indices = np.random.choice(len(df), size=count, replace=False)
             pii_templates = [
                 "contact john@example.com",
