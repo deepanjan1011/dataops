@@ -287,13 +287,13 @@ def create_gradio_interface(env):
         try:
             df = env.dataframes.get("main", pd.DataFrame())
             if df is None or df.empty:
-                return None
+                return gr.update(value=None, visible=False)
             import tempfile
             tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".csv", prefix="dataops_cleaned_")
             df.to_csv(tmp.name, index=False)
-            return tmp.name
+            return gr.update(value=tmp.name, visible=True)
         except Exception:
-            return None
+            return gr.update(value=None, visible=False)
 
     # ── Tab 2: Reward Visualization ─────────────────────────────────────────
 
@@ -623,9 +623,8 @@ def create_gradio_interface(env):
                 exec_btn = gr.Button("Execute Action", variant="primary")
                 grade_btn = gr.Button("Grade Episode")
                 grade_result = gr.Textbox(label="Grade", interactive=False)
-            with gr.Row():
-                download_btn = gr.Button("Download Cleaned CSV", variant="secondary")
-                download_file = gr.File(label="Download", interactive=False)
+            download_file = gr.File(label="Download Cleaned CSV", interactive=False, visible=False)
+            download_btn = gr.Button("Download Cleaned CSV", variant="secondary")
 
             reset_btn.click(
                 playground_reset,
