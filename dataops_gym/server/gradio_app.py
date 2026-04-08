@@ -722,12 +722,14 @@ def create_gradio_interface(env):
             gr.Markdown("### Collaborative multi-agent data cleaning")
             with gr.Row():
                 ma_task_dd = gr.Dropdown(
-                    choices=["current_dataset"] + TASK_IDS, value="easy", label="Task",
+                    choices=TASK_IDS, value="easy", label="Task",
                     allow_custom_value=True, elem_id="ma_task",
                 )
                 ma_agents_sl = gr.Slider(2, 5, value=3, step=1, label="Agents")
                 ma_seed_tb = gr.Textbox(label="Seed", value="42")
+            with gr.Row():
                 ma_start_btn = gr.Button("Start Multi-Agent", variant="primary")
+                ma_use_current_btn = gr.Button("Use Current Dataset (from Playground)", variant="secondary")
             with gr.Row():
                 ma_assignments_tb = gr.Textbox(label="Agent Assignments", lines=5, interactive=False)
                 ma_coord_tb = gr.Textbox(label="Coordination Score", interactive=False)
@@ -747,6 +749,11 @@ def create_gradio_interface(env):
             ma_start_btn.click(
                 multi_agent_start,
                 inputs=[ma_task_dd, ma_agents_sl, ma_seed_tb],
+                outputs=[ma_assignments_tb, ma_coord_tb, ma_conflicts_tb, ma_steps_tb, ma_agent_dd],
+            )
+            ma_use_current_btn.click(
+                lambda n, s: multi_agent_start("current_dataset", n, s),
+                inputs=[ma_agents_sl, ma_seed_tb],
                 outputs=[ma_assignments_tb, ma_coord_tb, ma_conflicts_tb, ma_steps_tb, ma_agent_dd],
             )
             ma_step_btn.click(
