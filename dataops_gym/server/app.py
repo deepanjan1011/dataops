@@ -383,6 +383,9 @@ def grader():
             score = grade(env.current_task, main_df.copy(), env.golden_df)
             grading_mode = "golden"
 
+        # Hard clamp: competition requires strictly between 0 and 1 (exclusive)
+        score = float(min(max(score, 0.0001), 0.9999))
+
         details = {
             "rows_in_final": int(len(main_df)),
             "rows_in_golden": int(len(env.golden_df)) if env.golden_df is not None else 0,
