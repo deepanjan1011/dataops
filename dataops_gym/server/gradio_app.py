@@ -476,8 +476,17 @@ def create_gradio_interface(env):
         import dataops_gym.server.app as app_module
         from dataops_gym.models import AgentAssignment, MultiAgentState
 
-        seed = int(seed_val) if seed_val else None
-        env.reset(task_id, seed=seed, num_rows=100)
+        if task_id == "current_dataset":
+            # Use whatever dataframe is already loaded (custom upload or previous task)
+            df = env.dataframes.get("main", pd.DataFrame())
+            if df is None or df.empty:
+                return (
+                    "No dataset loaded. Upload a CSV in the Playground tab first, or pick a task.",
+                    "", "", "", gr.update(),
+                )
+        else:
+            seed = int(seed_val) if seed_val else None
+            env.reset(task_id, seed=seed, num_rows=100)
 
         columns = list(env.dataframes["main"].columns)
         n = int(num_agents)
@@ -714,7 +723,7 @@ def create_gradio_interface(env):
             gr.Markdown("### Collaborative multi-agent data cleaning")
             with gr.Row():
                 ma_task_dd = gr.Dropdown(
-                    choices=TASK_IDS, value="easy", label="Task",
+                    choices=["current_dataset"] + TASK_IDS, value="easy", label="Task",
                     allow_custom_value=True, elem_id="ma_task",
                 )
                 ma_agents_sl = gr.Slider(2, 5, value=3, step=1, label="Agents")
