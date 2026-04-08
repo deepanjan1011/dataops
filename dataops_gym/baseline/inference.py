@@ -281,10 +281,10 @@ def run_task(task_id: str) -> float:
         grade_resp = requests.post(f"{BASE_URL}/grader")
         grade_resp.raise_for_status()
         result = grade_resp.json()
-        score = result.get("score", 0.0)
+        score = result.get("score", 0.0001)
     except Exception as e:
         print(f"  Grader request failed: {e}")
-        score = 0.0
+        score = 0.0001
 
     print(f"  Final health: {obs.get('data_health_score', 0):.3f} | Grader score: {score}")
     return score
@@ -310,7 +310,7 @@ def run_all_tasks() -> dict:
             scores[task_id] = score
         except Exception as e:
             print(f"  Task '{task_id}' failed: {e}")
-            scores[task_id] = 0.0
+            scores[task_id] = 0.0001
 
     print(f"\n{'='*50}")
     print("BASELINE SCORES:")

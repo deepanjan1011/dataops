@@ -113,12 +113,12 @@ def test_grader_returns_valid_score_all_tasks(env):
         # Use criteria-based grader (procedural mode)
         score = grade_by_criteria(task_id, env.dataframes["main"].copy(), env.grading_criteria)
         assert isinstance(score, float), f"{task_id}: expected float, got {type(score)}"
-        assert 0.0 <= score <= 1.0, f"{task_id}: score {score} out of [0,1]"
+        assert 0.0 < score < 1.0, f"{task_id}: score {score} must be strictly between 0 and 1"
 
     # Empty df should not crash
     env.reset("easy")
     empty_score = grade_by_criteria("easy", pd.DataFrame(), env.grading_criteria)
-    assert 0.0 <= empty_score <= 1.0
+    assert 0.0 < empty_score < 1.0
 
 
 # ── Test 8: health score changes after valid actions ─────────────────────────
@@ -202,7 +202,7 @@ def test_criteria_grader_returns_valid_score():
     env.reset("easy", seed=42)
     score = grade_by_criteria("easy", env.dataframes["main"], env.grading_criteria)
     assert isinstance(score, float)
-    assert 0.0 <= score <= 1.0
+    assert 0.0 < score < 1.0
 
 
 # ── Test 15: high null_percentage produces more nulls ─────────────────────────
@@ -309,7 +309,7 @@ def test_upload_creates_valid_task():
     grader_resp = client.post("/grader")
     assert grader_resp.status_code == 200
     grader_data = grader_resp.json()
-    assert 0.0 <= grader_data["score"] <= 1.0
+    assert 0.0 < grader_data["score"] < 1.0
 
 
 # ── Phase 1: Outlier Detection + Schema Migration ───────────────────────────
@@ -378,14 +378,14 @@ def test_outlier_grader():
     env = DataOpsEnvironment()
     env.reset("outlier_detection", seed=42)
     score = grade_by_criteria("outlier_detection", env.dataframes["main"], env.grading_criteria)
-    assert 0.0 <= score <= 1.0
+    assert 0.0 < score < 1.0
 
 
 def test_schema_migration_grader():
     env = DataOpsEnvironment()
     env.reset("schema_migration", seed=42)
     score = grade_by_criteria("schema_migration", env.dataframes["main"], env.grading_criteria)
-    assert 0.0 <= score <= 1.0
+    assert 0.0 < score < 1.0
 
 
 # ── Phase 2: Data Drift Detection ───────────────────────────────────────────
@@ -428,7 +428,7 @@ def test_drift_grader():
         env.step(DataOpsAction(action_type="advance_stream"))
         env.step(DataOpsAction(action_type="label_batch", drift_label="normal"))
     score = grade_by_criteria("drift_detection", env.dataframes["main"], env.grading_criteria)
-    assert 0.0 <= score <= 1.0
+    assert 0.0 < score < 1.0
 
 
 # ── Phase 3: Poisoning Detection ────────────────────────────────────────────
@@ -456,7 +456,7 @@ def test_poisoning_grader():
     env.reset("poisoning_detection", seed=42)
     env.step(DataOpsAction(action_type="flag_rows", row_indices=[0, 1, 2, 3, 4]))
     score = grade_by_criteria("poisoning_detection", env.dataframes["main"], env.grading_criteria)
-    assert 0.0 <= score <= 1.0
+    assert 0.0 < score < 1.0
 
 
 # ── Phase 4: Curriculum Learning ───────────────────────────────────────────

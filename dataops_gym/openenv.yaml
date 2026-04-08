@@ -30,7 +30,7 @@ tasks:
     description: "Redact all PII (emails, phone numbers, credit card numbers, SSNs) from web-scraped text documents while preserving non-PII content."
     difficulty: hard
     max_steps: 30
-    expected_score_range: [0.20, 1.0]
+    expected_score_range: [0.20, 0.9999]
 
   - id: outlier_detection
     description: "Detect and handle outliers in an employee dataset. Distinguish genuine errors from legitimate extreme values using context (e.g., executive salaries)."
@@ -48,7 +48,7 @@ tasks:
     description: "Detect data drift in a streaming e-commerce dataset. Analyze each incoming batch against historical data and label it as 'normal' or 'drift'."
     difficulty: hard
     max_steps: 60
-    expected_score_range: [0.20, 1.0]
+    expected_score_range: [0.20, 0.9999]
 
   - id: poisoning_detection
     description: "Detect poisoned samples in a sentiment classification dataset. Find label flips, subtle mislabels, and trigger phrase injections without flagging clean data."
