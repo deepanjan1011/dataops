@@ -116,7 +116,8 @@ def _env_grade() -> float:
     resp = requests.post(f"{DATAOPS_GYM_URL}/grader")
     resp.raise_for_status()
     result = resp.json()
-    return min(max(result.get("score", 0.0), 0.0), 1.0)
+    raw = result.get("score", 0.0001)
+    return min(max(raw, 0.0001), 0.9999)
 
 
 def _execute_sequence(task_id: str, actions: list) -> float:
@@ -126,7 +127,7 @@ def _execute_sequence(task_id: str, actions: list) -> float:
 
     step_count = 0
     rewards: List[float] = []
-    score = 0.0
+    score = 0.0001
     success = False
 
     try:
@@ -153,9 +154,9 @@ def _execute_sequence(task_id: str, actions: list) -> float:
                 break
 
         score = _env_grade()
-        success = score > 0.0
+        success = score > 0.0001
     except Exception:
-        score = 0.0
+        score = 0.0001
     finally:
         log_end(success=success, steps=step_count, score=score, rewards=rewards)
 
@@ -740,7 +741,7 @@ def run_all_tasks() -> dict:
             score = run_task(task_id)
             scores[task_id] = score
         except Exception:
-            scores[task_id] = 0.0
+            scores[task_id] = 0.0001
 
     return scores
 
